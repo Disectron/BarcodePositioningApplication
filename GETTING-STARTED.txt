@@ -3,6 +3,8 @@ AOPS - Absolute Optical Position Strip Generator
 
 WHAT IS IN THIS ARCHIVE
 -----------------------
+  run.bat / run.sh       Start here. One-step launcher: sets up on first run,
+  run.py                 then starts the GUI. run.py is the cross-platform core.
   README.md              Full documentation: install, architecture, the
                          engineering results the tool derives.
   src/aops/              The application (49 modules).
@@ -17,8 +19,39 @@ WHAT IS IN THIS ARCHIVE
                          claude/aops-desktop-app-zw49si
 
 
-INSTALL  (Python 3.12 or later)
--------------------------------
+QUICK START  (Python 3.12 or later is the only prerequisite)
+------------------------------------------------------------
+Windows:        double-click  run.bat
+Linux / macOS:  ./run.sh
+
+The first run creates .venv, installs dependencies into it, and starts the GUI.
+Every run after that starts immediately.
+
+DO NOT run  python src/aops/app.py  directly. The package uses a src layout, so
+running a file inside it puts src/aops/ on sys.path instead of src/, and you get
+
+    ModuleNotFoundError: No module named 'aops'
+
+run.py exists to make that mistake impossible - it puts src/ on the path first.
+If you already have an environment, plain  python run.py  works too.
+
+
+RUN
+---
+    run.bat                          GUI                        (Windows)
+    ./run.sh                         GUI                        (Linux/macOS)
+    ./run.sh info                    summarise a configuration
+    ./run.sh export -o ./out         export PDFs, no GUI needed
+    ./run.sh symbol 010500           print one symbol as ASCII
+
+    ./run.sh info -p sample-output/demo-project.aops
+
+The launchers forward every argument through to the CLI, so anything below works
+with run.bat / run.sh in front of it.
+
+
+MANUAL INSTALL  (only if you want to manage the environment yourself)
+---------------------------------------------------------------------
 Linux / WSL:
 
     sudo apt-get update
@@ -31,8 +64,8 @@ Linux / WSL:
     ./.venv/bin/pip install -r requirements.txt
 
 Windows:
-    Install the libdmtx DLL (e.g. via the pylibdmtx wheel, which bundles it on
-    Windows), then:
+    The pylibdmtx wheel bundles the libdmtx DLL, so there is nothing extra to
+    install.
 
     py -3.12 -m venv .venv
     .venv\Scripts\pip install -r requirements.txt
@@ -48,20 +81,12 @@ setuptools dependency and no downgrade is required. See
 src/aops/symbols/compat.py.
 
 
-RUN
----
-    ./.venv/bin/python -m aops                       GUI
-    ./.venv/bin/python -m aops.cli info              summarise a configuration
-    ./.venv/bin/python -m aops.cli export -o ./out   export PDFs, no GUI needed
-    ./.venv/bin/python -m aops.cli symbol 010500     print one symbol as ASCII
-
-    ./.venv/bin/python -m aops.cli info -p sample-output/demo-project.aops
-
-
 TEST
 ----
     QT_QPA_PLATFORM=offscreen ./.venv/bin/python -m pytest
     ./.venv/bin/ruff check src tests
+
+    4260 tests, ~10 seconds.
 
 
 FIRST THINGS TO CHECK IN THE GUI
@@ -82,13 +107,6 @@ FIRST THINGS TO CHECK IN THE GUI
    shows empty outlines - AOPS will not silently substitute a symbology.
 
 
-PUSHING TO GITHUB
------------------
-The commit could not be pushed from the build environment: both git push and
-the GitHub API returned 403 (the GitHub App has read-only content permission on
-Disectron/BarcodePositioningApplication). Once write access is granted:
-
-    git remote add origin https://github.com/Disectron/BarcodePositioningApplication
-    git push -u origin claude/aops-desktop-app-zw49si
-
-The branch and commit already exist in this archive's .git directory.
+REPOSITORY
+----------
+    https://github.com/Disectron/BarcodePositioningApplication

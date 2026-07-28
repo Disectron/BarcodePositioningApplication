@@ -46,6 +46,14 @@ ignore = [
     "SIM108",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# run.py is the zero-install launcher and is deliberately written in an old
+# Python dialect: its whole job is to print "you need Python 3.12+" on an
+# interpreter far older than that, which it cannot do if it fails to PARSE
+# first. Percent formatting is the conservative choice there, so UP031
+# ("use format specifiers") is exactly the wrong advice for this one file.
+"run.py" = ["UP031"]
+
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true

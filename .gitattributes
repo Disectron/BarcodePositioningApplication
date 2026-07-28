@@ -1,0 +1,13 @@
+# Batch files must reach Windows with CRLF endings. cmd.exe label and goto
+# parsing is the known weak spot with LF-only files, and run.bat depends on
+# both throughout, so this is cheap insurance on a file that cannot be tested
+# from a Linux CI host.
+*.bat text eol=crlf
+
+# Shell scripts must keep LF even when checked out on Windows, or the shebang
+# carries a stray CR and the interpreter is not found.
+*.sh text eol=lf
+
+# PDFs and images in sample-output/ are committed reference output.
+*.pdf binary
+*.png binary

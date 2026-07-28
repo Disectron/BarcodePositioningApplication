@@ -12,14 +12,40 @@ calibration, scanner optics and traceability are first-class features rather tha
 
 ---
 
-## Install
+## Quick start
 
-Python 3.12 or later.
+Python 3.12 or later is the only prerequisite.
+
+**Windows** — double-click **`run.bat`**.
+
+**Linux / macOS** — `./run.sh`
+
+The first run creates `.venv`, installs the dependencies into it, and launches the GUI.
+Every run after that starts immediately. The same launchers forward arguments for headless
+use:
+
+```
+run.bat info                 (Windows)
+./run.sh export -o ./out     (Linux / macOS)
+```
+
+If you already have an environment set up, `python run.py` does the same thing without the
+venv bootstrap.
+
+> **Do not run `python src/aops/app.py` directly.** The package uses a `src` layout, so
+> running a file inside it puts `src/aops/` on `sys.path` rather than `src/`, and the import
+> fails with `ModuleNotFoundError: No module named 'aops'`. `run.py` exists precisely to
+> make that mistake impossible — it puts `src/` on the path first.
+
+### Manual install
+
+If you would rather manage the environment yourself:
 
 ```bash
 # Native libdmtx (pylibdmtx is a ctypes binding and needs the shared library).
 # Note: libdmtx0b has no install candidate on Ubuntu Noble; the runtime .so
-# ships with the -dev package.
+# ships with the -dev package. On Windows the pylibdmtx wheel bundles the DLL,
+# so this step is not needed there.
 sudo apt-get update && sudo apt-get install -y libdmtx-dev
 
 # Qt runtime, on a minimal or headless Linux host
@@ -38,6 +64,17 @@ shim into `sys.modules` before pylibdmtx loads — see `src/aops/symbols/compat.
 dependency is needed, and the shim never clobbers a real `distutils`.
 
 ## Run
+
+Via the launcher (no activation needed):
+
+```bash
+./run.sh                       # GUI
+./run.sh info                  # summarise a configuration
+./run.sh export -o ./out       # export PDFs, no GUI required
+./run.sh symbol 010500         # print one symbol as ASCII
+```
+
+Or directly against the virtual environment:
 
 ```bash
 ./.venv/bin/python -m aops                       # GUI
