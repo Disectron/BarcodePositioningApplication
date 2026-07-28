@@ -275,3 +275,111 @@ def test_dependent_rows_come_back_when_their_switch_returns(app):
     store.update_section("output", human_readable=True)
     panel.refresh(store.config, None)
     assert panel.rows()["output.hr_position"].isEnabled()
+
+
+# -- guidance: one-click fixes ----------------------------------------------
+
+
+def test_a_broken_geometry_offers_a_concrete_fix(app):
+    """The user's actual complaint: what do I change, and to what?"""
+    import dataclasses as dc
+
+    from aops.core.config import AopsConfig, DimensionConfig
+    from aops.core.rules import ALL_RULES
+    from aops.core.stats import derive
+    from aops.core.validation import run_rules
+
+    cfg = dc.replace(AopsConfig(), dimensions=DimensionConfig(pitch_mm=25.0, symbol_size_mm=30.0))
+    fixes = [f.fix for f in run_rules(ALL_RULES, cfg, derive(cfg)).findings if f.fix]
+    assert fixes
+    fix = fixes[0]
+    assert fix.field == "dimensions.pitch_mm"
+    assert fix.value == pytest.approx(32.0)  # symbol 30 + 2 x 1 mm quiet zone
+    assert "32.000" in fix.label
+
+
+def test_applying_the_fix_clears_the_error(app):
+    """A fix that leaves the configuration still blocked would be worthless."""
+    import dataclasses as dc
+
+    from aops.core.config import AopsConfig, DimensionConfig
+    from aops.core.rules import ALL_RULES
+    from aops.core.stats import derive
+    from aops.core.validation import run_rules
+
+    cfg = dc.replace(AopsConfig(), dimensions=DimensionConfig(pitch_mm=25.0, symbol_size_mm=30.0))
+    report = run_rules(ALL_RULES, cfg, derive(cfg))
+    assert report.blocks_export
+
+    fix = next(f.fix for f in report.findings if f.fix)
+    section, name = fix.field.split(".", 1)
+    fixed = dc.replace(cfg, **{section: dc.replace(getattr(cfg, section), **{name: fix.value})})
+    assert not run_rules(ALL_RULES, fixed, derive(fixed)).blocks_export
+
+
+def test_the_window_applies_a_fix_and_it_is_undoable(app):
+    from aops.ui.main_window import MainWindow
+
+    win = MainWindow()
+    win._store.update_section("dimensions", symbol_size_mm=30.0)
+    before = win._store.config.dimensions.pitch_mm
+
+    report = win._controller.validate() if hasattr(win._controller, "validate") else None
+    from aops.core.rules import ALL_RULES
+    from aops.core.stats import derive
+    from aops.core.validation import run_rules
+
+    report = run_rules(ALL_RULES, win._store.config, derive(win._store.config))
+    fix = next(f.fix for f in report.findings if f.fix)
+
+    win._apply_fix(fix)
+    assert win._store.config.dimensions.pitch_mm == pytest.approx(32.0)
+    win._store.undo()
+    assert win._store.config.dimensions.pitch_mm == pytest.approx(before)
+
+    # closeEvent asks about unsaved changes with a modal dialog, which would
+    # block forever with no one to dismiss it.
+    win._store.mark_saved()
+    win.close()
+
+
+def test_issue_rows_render_a_button_only_when_a_fix_exists(app):
+    from PySide6.QtWidgets import QPushButton
+
+    from aops.core.enums import Severity
+    from aops.core.validation import Finding, Fix
+    from aops.ui.widgets.issues_panel import _IssueRow
+
+    plain = _IssueRow(Finding("X-001", Severity.WARNING, "no fix available"))
+    assert not plain.findChildren(QPushButton)
+
+    fixable = _IssueRow(
+        Finding("X-002", Severity.ERROR, "fixable", fix=Fix("dimensions.pitch_mm", 32.0, "Set it"))
+    )
+    assert len(fixable.findChildren(QPushButton)) == 1
+
+
+def test_summary_rows_carry_explanations(app):
+    """The jargon-heaviest labels must all be hoverable."""
+    from aops.ui.widgets.summary_panel import ParameterSummary
+
+    panel = ParameterSummary()
+    for key in ("cumulative", "bounded", "dots", "thermal", "quiet"):
+        row = panel.accuracy._rows.get(key) or panel.geom._rows.get(key)
+        assert row is not None, key
+        assert row.toolTip(), f"{key} has no explanation"
+
+
+def test_glossary_covers_every_summary_row(app):
+    """A row added without a glossary entry silently loses its tooltip."""
+    from aops.resources.glossary import TERMS
+    from aops.ui.widgets.summary_panel import EngineeringSummary, ParameterSummary
+
+    groups = []
+    p = ParameterSummary()
+    groups += [p.ident, p.geom, p.output, p.accuracy]
+    e = EngineeringSummary()
+    groups += [e.position, e.scanner]
+
+    missing = [k for g in groups for k in g._rows if k not in TERMS]
+    assert missing == [], f"no glossary entry for: {missing}"

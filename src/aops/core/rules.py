@@ -41,7 +41,7 @@ from aops.core.errors import GeometryError
 from aops.core.layout.bands import solve_bands
 from aops.core.stats import DerivedGeometry
 from aops.core.units import PDF_MAX_PT, PDF_MAX_USER_UNIT, mm_per_dot
-from aops.core.validation import Finding, Rule
+from aops.core.validation import Finding, Fix, Rule
 
 #: Minimum printer dots per symbol module for clean edge definition. Below 3 the
 #: module edges break up; 5 is the comfortable industrial target.
@@ -52,8 +52,20 @@ GOOD_MODULE_DOTS: float = 5.0
 QUIET_MODULES = {Symbology.DATA_MATRIX: 1, Symbology.QR: 4}
 
 
-def _f(rule_id: str, sev: Severity, msg: str, field: str | None = None, hint: str | None = None) -> Finding:
-    return Finding(rule_id=rule_id, severity=sev, message=msg, field=field, hint=hint)
+def _f(
+    rule_id: str,
+    sev: Severity,
+    msg: str,
+    field: str | None = None,
+    hint: str | None = None,
+    fix: Fix | None = None,
+) -> Finding:
+    return Finding(rule_id=rule_id, severity=sev, message=msg, field=field, hint=hint, fix=fix)
+
+
+def _mm_fix(field: str, value: float, what: str) -> Fix:
+    """A one-click correction expressed in millimetres."""
+    return Fix(field=field, value=round(value, 3), label=f"Set {what} to {value:.3f} mm")
 
 
 # --------------------------------------------------------------------------
@@ -82,11 +94,16 @@ def geo_cell(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Findi
         return
 
     if dim.symbol_size_mm > dim.pitch_mm:
+        # Raise the pitch far enough to clear the quiet zones too, so applying
+        # this does not simply surface GEO-004 on the next recompute.
+        target = dim.symbol_size_mm + 2 * dim.quiet_zone_mm
         yield _f("GEO-003", Severity.ERROR,
                  f"Symbol ({dim.symbol_size_mm:.3f} mm) is larger than the cell pitch "
                  f"({dim.pitch_mm:.3f} mm); symbols would overlap.",
                  "dimensions.symbol_size_mm",
-                 f"Reduce the symbol below {dim.pitch_mm:.3f} mm or raise the pitch.")
+                 f"Reduce the symbol below {dim.pitch_mm:.3f} mm, or raise the pitch to "
+                 f"{target:.3f} mm.",
+                 _mm_fix("dimensions.pitch_mm", target, "cell pitch"))
         return
 
     needed = dim.symbol_size_mm + 2 * dim.quiet_zone_mm
@@ -97,14 +114,16 @@ def geo_cell(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Findi
                  f"safety is lost.",
                  "dimensions.quiet_zone_mm",
                  f"Raise the pitch to at least {needed:.3f} mm, or reduce the symbol "
-                 f"or quiet zone.")
+                 f"or quiet zone.",
+                 _mm_fix("dimensions.pitch_mm", needed, "cell pitch"))
 
     if needed > dim.strip_height_mm:
         yield _f("GEO-007", Severity.ERROR,
                  f"Symbol plus quiet zones ({needed:.3f} mm) does not fit the strip height "
                  f"({dim.strip_height_mm:.3f} mm).",
                  "dimensions.strip_height_mm",
-                 f"Increase the strip height to at least {needed:.3f} mm.")
+                 f"Increase the strip height to at least {needed:.3f} mm.",
+                 _mm_fix("dimensions.strip_height_mm", needed, "strip height"))
 
     if dim.lr_margin_mode is LrMarginMode.DRIVES_PITCH:
         implied = dim.symbol_size_mm + 2 * dim.margin_lr_mm
@@ -116,11 +135,14 @@ def geo_cell(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Findi
 
     gap = dim.pitch_mm - dim.symbol_size_mm
     if 0 < gap < 3.0:
+        target = dim.symbol_size_mm + 3.0
         yield _f("GEO-013", Severity.WARNING,
                  f"White gap between symbols is only {gap:.3f} mm, leaving "
                  f"{gap / 2:.3f} mm of cutting tolerance at each splice.",
                  "dimensions.pitch_mm",
-                 "Increase the pitch or reduce the symbol for easier trimming.")
+                 f"Raise the pitch to {target:.3f} mm for 1.5 mm of tolerance each side, "
+                 f"or reduce the symbol.",
+                 _mm_fix("dimensions.pitch_mm", target, "cell pitch"))
 
 
 def geo_module(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
@@ -234,12 +256,14 @@ def pay_digits(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fin
                  f"{have} digits cannot represent the largest payload, which needs {need} "
                  f"(maximum position {derived.max_position_mm:.3f} mm). Payloads would be "
                  f"truncated and ambiguous.",
-                 "payload.digits", f"Set digits to at least {need}.")
+                 "payload.digits", f"Set digits to at least {need}.",
+                 Fix("payload.digits", need, f"Set digits to {need}"))
     elif have > need + 2:
         yield _f("PAY-003", Severity.WARNING,
                  f"{have} digits is {have - need} more than needed; the extra characters "
                  f"may push the symbol to a larger matrix than necessary.",
-                 "payload.digits", f"{need} digits would suffice.")
+                 "payload.digits", f"{need} digits would suffice.",
+                 Fix("payload.digits", need, f"Set digits to {need}"))
 
 
 def pay_precision(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
@@ -295,7 +319,8 @@ def sym_quiet_zone(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable
                  f"= {required_mm:.3f} mm; configured value is "
                  f"{cfg.dimensions.quiet_zone_mm:.3f} mm.",
                  "dimensions.quiet_zone_mm",
-                 f"Increase the quiet zone to {required_mm:.3f} mm.")
+                 f"Increase the quiet zone to {required_mm:.3f} mm.",
+                 _mm_fix("dimensions.quiet_zone_mm", required_mm, "quiet zone"))
 
 
 def sym_qr_ecc(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:

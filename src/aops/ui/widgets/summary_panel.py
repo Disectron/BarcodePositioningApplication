@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from aops.core.config import AopsConfig
 from aops.core.stats import DerivedGeometry
+from aops.resources.glossary import label_for, tooltip_for
 from aops.ui.theme.palette import ERROR, OK, TEXT_DIM, WARNING
 from aops.ui.widgets.field_row import SummaryGroup
 
@@ -37,7 +38,7 @@ class ParameterSummary(QWidget):
             ("revision", "Revision"),
             ("fingerprint", "Fingerprint"),
         ):
-            self.ident.add(key, label)
+            self.ident.add(key, label_for(key, label), tooltip_for(key))
         left.addWidget(self.ident)
 
         self.geom = SummaryGroup("Geometry")
@@ -49,7 +50,7 @@ class ParameterSummary(QWidget):
             ("quiet", "Quiet zone"),
             ("height", "Strip height"),
         ):
-            self.geom.add(key, label)
+            self.geom.add(key, label_for(key, label), tooltip_for(key))
         left.addWidget(self.geom)
         left.addStretch(1)
 
@@ -62,7 +63,7 @@ class ParameterSummary(QWidget):
             ("size", "Estimated PDF size"),
             ("payload", "Payload example"),
         ):
-            self.output.add(key, label)
+            self.output.add(key, label_for(key, label), tooltip_for(key))
         right.addWidget(self.output)
 
         self.accuracy = SummaryGroup("Print accuracy")
@@ -73,7 +74,7 @@ class ParameterSummary(QWidget):
             ("cumulative", "Butt-splice error"),
             ("bounded", "Datum-aligned error"),
         ):
-            self.accuracy.add(key, label)
+            self.accuracy.add(key, label_for(key, label), tooltip_for(key))
         right.addWidget(self.accuracy)
         right.addStretch(1)
 
@@ -170,7 +171,7 @@ class EngineeringSummary(QWidget):
             ("resolution", "Resolution"),
             ("digits", "Payload digits"),
         ):
-            self.position.add(key, label)
+            self.position.add(key, label_for(key, label), tooltip_for(key))
         left.addWidget(self.position)
         left.addStretch(1)
 
@@ -183,7 +184,7 @@ class EngineeringSummary(QWidget):
             ("wd", "Working distance"),
             ("mount", "Mount height"),
         ):
-            self.scanner.add(key, label)
+            self.scanner.add(key, label_for(key, label), tooltip_for(key))
         right.addWidget(self.scanner)
         right.addStretch(1)
 

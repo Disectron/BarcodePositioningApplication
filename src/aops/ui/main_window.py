@@ -221,6 +221,7 @@ class MainWindow(QMainWindow):
             lambda _z: self._zoom_label.setText(f"{self._preview.scale_percent():.0f} %")
         )
         self._issues.findingActivated.connect(self._focus_field)
+        self._issues.fixRequested.connect(self._apply_fix)
 
     # -- controller signals -------------------------------------------------
 
@@ -285,6 +286,21 @@ class MainWindow(QMainWindow):
             self._status_detail.setText(
                 f"Ready to export. {len(warnings)} warning(s)." if warnings else "Ready to export."
             )
+
+    @Slot(object)
+    def _apply_fix(self, fix: object) -> None:
+        """Apply a correction offered by a validation finding.
+
+        Goes through the store like any other edit, so it lands on the undo
+        stack as one step and the user can back it out with Ctrl+Z if the
+        suggestion was not what they meant.
+        """
+        field = getattr(fix, "field", None)
+        if not field or "." not in field:
+            return
+        section, name = field.split(".", 1)
+        self._store.update_section(section, **{name: fix.value})
+        self._focus_field(field)
 
     @Slot(str)
     def _on_filter_changed(self, needle: str) -> None:

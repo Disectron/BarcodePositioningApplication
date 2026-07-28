@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from aops.core.enums import Severity
+from aops.resources.glossary import SECTION_TERMS
 from aops.ui.theme.palette import SEVERITY_COLOURS
 from aops.ui.widgets.field_row import STEP_HINT
 
@@ -158,6 +159,9 @@ class AccordionPanel(QWidget):
     def add_section(self, key: str, title: str) -> AccordionSection:
         self._counter += 1
         section = AccordionSection(self._counter, title, self)
+        tooltip = SECTION_TERMS.get(key, "")
+        if tooltip:
+            section.header.setToolTip(tooltip)
         self._sections[key] = section
         self._layout.addWidget(section)
         return section

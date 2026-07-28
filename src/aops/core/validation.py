@@ -21,6 +21,26 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
+class Fix:
+    """A concrete correction the user can apply in one click.
+
+    The geometry is over-determined - pitch, symbol size, quiet zone and strip
+    height all constrain one another - so raising one value routinely makes
+    another illegal, and "reduce the symbol or raise the pitch" leaves the user
+    to work out which and by how much. A `Fix` carries the arithmetic already
+    done: the exact field, the exact value, and a label naming both.
+
+    Deliberately one field. A fix that changed several at once would be a
+    guess about intent rather than the single smallest correction that clears
+    the finding.
+    """
+
+    field: str
+    value: float | int
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
 class Finding:
     """One validation result, with numbers already substituted into the text."""
 
@@ -29,6 +49,7 @@ class Finding:
     message: str
     field: str | None = None
     hint: str | None = None
+    fix: Fix | None = None
 
 
 @dataclass(frozen=True, slots=True)

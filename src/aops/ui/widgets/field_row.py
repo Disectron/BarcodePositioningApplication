@@ -300,9 +300,21 @@ def make_text(value: str, rows: int = 3) -> QPlainTextEdit:
 
 
 class ReadoutRow(QWidget):
-    """A non-editable label/value pair used in the summary panels."""
+    """A non-editable label/value pair used in the summary panels.
 
-    def __init__(self, label: str, value: str = "-", parent: QWidget | None = None) -> None:
+    These carry the densest jargon in the application - "field of view",
+    "occlusion tolerance", "butt-splice error" - and until they carried
+    tooltips a reader had no way in other than asking someone.
+    """
+
+    def __init__(
+        self,
+        label: str,
+        value: str = "-",
+        parent: QWidget | None = None,
+        *,
+        tooltip: str = "",
+    ) -> None:
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 1, 0, 1)
@@ -312,6 +324,7 @@ class ReadoutRow(QWidget):
         self._label.setProperty("fieldLabel", True)
         self._label.setMinimumWidth(150)
         self._label.setMaximumWidth(150)
+        self._label.setWordWrap(True)
 
         self._value = QLabel(value, self)
         self._value.setProperty("mono", True)
@@ -320,6 +333,12 @@ class ReadoutRow(QWidget):
 
         layout.addWidget(self._label)
         layout.addWidget(self._value, 1)
+
+        if tooltip:
+            # On the row, the label and the value alike: hovering anywhere on
+            # the line should explain it, not just the words on the left.
+            for widget in (self, self._label, self._value):
+                widget.setToolTip(tooltip)
 
     def set_value(self, value: str) -> None:
         self._value.setText(value)
@@ -348,8 +367,8 @@ class SummaryGroup(QWidget):
 
         self._rows: dict[str, ReadoutRow] = {}
 
-    def add(self, key: str, label: str) -> ReadoutRow:
-        row = ReadoutRow(label, parent=self)
+    def add(self, key: str, label: str, tooltip: str = "") -> ReadoutRow:
+        row = ReadoutRow(label, parent=self, tooltip=tooltip)
         self._rows[key] = row
         self._layout.addWidget(row)
         return row
