@@ -1,0 +1,32 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test and lint caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Exported artefacts. `aops export` defaults to ./out; generated PDFs are
+# reproducible from a .aops project file, so they are not source.
+# sample-output/ is deliberately NOT ignored - it is committed reference output.
+out/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
