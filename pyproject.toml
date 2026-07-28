@@ -1,0 +1,69 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aops"
+version = "1.0.0"
+description = "Absolute Optical Position Strip Generator - industrial optical positioning strip utility"
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6>=6.6",
+    "reportlab>=4.0",
+    "Pillow>=10.0",
+    "qrcode>=7.4",
+    "pylibdmtx>=0.1.10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-qt>=4.4", "ruff>=0.5", "mypy>=1.10"]
+
+[project.scripts]
+aops = "aops.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+aops = ["ui/theme/*.qss", "ui/theme/icons/*.svg"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RET", "C4", "PIE", "TID"]
+ignore = [
+    "E501",   # line length is handled by the formatter
+    # `X: TypeAlias = ...` is kept over the 3.12 `type X = ...` statement: the
+    # latter creates a lazy TypeAliasType, which is a needless subtlety for what
+    # are plain unions used in isinstance-dispatched rendering code.
+    "UP040",
+    # Ternaries are rejected where the explicit if/else documents a real
+    # branch - notably the payload sign handling and the sensor-resolution
+    # guard, both of which read better spelled out.
+    "SIM108",
+]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+# The pure domain and symbol layers are held to a stricter standard than the UI,
+# where PySide6's dynamic signal/slot machinery defeats static analysis.
+module = ["aops.core.*", "aops.symbols.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = ["pylibdmtx.*", "qrcode.*", "reportlab.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = ["error::DeprecationWarning:aops.*"]

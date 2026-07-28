@@ -1,0 +1,32 @@
+# AOPS - Absolute Optical Position Strip Generator
+#
+# Runtime dependencies. Python 3.12+ required.
+#
+# SYSTEM PACKAGES (not installable via pip) -------------------------------------
+# pylibdmtx is a ctypes binding and needs the native libdmtx shared library.
+# On Debian/Ubuntu (note: libdmtx0b has no install candidate on Noble; the
+# runtime .so ships with the -dev package):
+#
+#   sudo apt-get update && sudo apt-get install -y libdmtx-dev
+#
+# For the Qt GUI on a headless/minimal Linux host, PySide6 additionally needs:
+#
+#   sudo apt-get install -y libegl1 libxkbcommon-x11-0 libxcb-cursor0 \
+#       libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-render-util0
+#
+# NOTE ON pylibdmtx AND PYTHON 3.12 --------------------------------------------
+# pylibdmtx 0.1.10 imports distutils.version.LooseVersion, and distutils was
+# removed from the stdlib in Python 3.12 (PEP 632). AOPS installs a minimal
+# shim before importing it - see src/aops/symbols/compat.py. No setuptools
+# dependency is required.
+
+PySide6>=6.6
+reportlab>=4.0
+Pillow>=10.0
+qrcode>=7.4
+pylibdmtx>=0.1.10
+
+# Development / test only
+pytest>=8.0
+pytest-qt>=4.4
+ruff>=0.5

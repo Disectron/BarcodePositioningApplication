@@ -1,0 +1,94 @@
+AOPS - Absolute Optical Position Strip Generator
+================================================
+
+WHAT IS IN THIS ARCHIVE
+-----------------------
+  README.md              Full documentation: install, architecture, the
+                         engineering results the tool derives.
+  src/aops/              The application (49 modules).
+  tests/                 4260 tests. All pass, headlessly.
+  docs/screenshot.png    The main window.
+  sample-output/         Ready-made output so you can see results immediately:
+                           barcode_strip_A4_tiles.pdf            41 pages
+                           barcode_strip_continuous_signshop.pdf 10.565 m, one page
+                           demo-project.aops                     example project file
+                           preview-*.png                         rendered pages
+  .git/                  Full history. The work is committed on branch
+                         claude/aops-desktop-app-zw49si
+
+
+INSTALL  (Python 3.12 or later)
+-------------------------------
+Linux / WSL:
+
+    sudo apt-get update
+    sudo apt-get install -y libdmtx-dev
+    # Only needed for the GUI on a minimal/headless host:
+    sudo apt-get install -y libegl1 libxkbcommon-x11-0 libxcb-cursor0 \
+        libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-render-util0
+
+    python3.12 -m venv .venv
+    ./.venv/bin/pip install -r requirements.txt
+
+Windows:
+    Install the libdmtx DLL (e.g. via the pylibdmtx wheel, which bundles it on
+    Windows), then:
+
+    py -3.12 -m venv .venv
+    .venv\Scripts\pip install -r requirements.txt
+
+macOS:
+    brew install libdmtx
+    python3.12 -m venv .venv
+    ./.venv/bin/pip install -r requirements.txt
+
+NOTE: pylibdmtx 0.1.10 cannot import on Python 3.12 unaided - distutils was
+removed by PEP 632. AOPS installs a minimal shim before it loads, so no
+setuptools dependency and no downgrade is required. See
+src/aops/symbols/compat.py.
+
+
+RUN
+---
+    ./.venv/bin/python -m aops                       GUI
+    ./.venv/bin/python -m aops.cli info              summarise a configuration
+    ./.venv/bin/python -m aops.cli export -o ./out   export PDFs, no GUI needed
+    ./.venv/bin/python -m aops.cli symbol 010500     print one symbol as ASCII
+
+    ./.venv/bin/python -m aops.cli info -p sample-output/demo-project.aops
+
+
+TEST
+----
+    QT_QPA_PLATFORM=offscreen ./.venv/bin/python -m pytest
+    ./.venv/bin/ruff check src tests
+
+
+FIRST THINGS TO CHECK IN THE GUI
+--------------------------------
+1. Engineering summary tab -> "Required field of view". It is
+   N x pitch + symbol, NOT the symbol size. 35 mm at the defaults. A reader
+   with a smaller window has blind zones where absolute position is lost.
+
+2. Parameter summary tab -> "Butt-splice error" vs "Datum-aligned error".
+   21.1 mm accumulated versus 0.54 mm per tile. This is why every sheet prints
+   its own absolute X range and why the guide says to align each tile with a
+   steel tape rather than butting them together.
+
+3. Set Media to "Paper" in section 8. It becomes a hard error, quoting the
+   predicted humidity drift in millimetres.
+
+4. Set Code type to Code 128. Export is blocked with SYM-001 and the preview
+   shows empty outlines - AOPS will not silently substitute a symbology.
+
+
+PUSHING TO GITHUB
+-----------------
+The commit could not be pushed from the build environment: both git push and
+the GitHub API returned 403 (the GitHub App has read-only content permission on
+Disectron/BarcodePositioningApplication). Once write access is granted:
+
+    git remote add origin https://github.com/Disectron/BarcodePositioningApplication
+    git push -u origin claude/aops-desktop-app-zw49si
+
+The branch and commit already exist in this archive's .git directory.

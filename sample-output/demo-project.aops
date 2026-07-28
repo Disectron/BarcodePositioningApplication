@@ -1,0 +1,116 @@
+{
+  "app_version": "1.0.0",
+  "config": {
+    "dimensions": {
+      "lr_margin_mode": "derived_from_pitch",
+      "margin_lr_mm": 7.5,
+      "pitch_mm": 25.0,
+      "quiet_zone_mm": 1.0,
+      "strip_height_mm": 40.0,
+      "symbol_size_mm": 10.0,
+      "symbol_v_offset_mm": 0.0
+    },
+    "extra": [],
+    "media": {
+      "adhesive_backed": true,
+      "dim_stability_pct_per_rh": 0.0,
+      "media": "polyester",
+      "method": "thermal_transfer",
+      "rh_swing_percent": 40.0,
+      "ribbon": "resin"
+    },
+    "output": {
+      "calibration_bar": true,
+      "calibration_scope": "every_page",
+      "continuous": true,
+      "continuous_max_length_mm": 5000.0,
+      "continuous_strategy": "user_unit",
+      "engineering_ruler": true,
+      "hr_font_pt": 7.0,
+      "hr_position": "below",
+      "human_readable": true,
+      "instruction_page": true,
+      "ruler_position": "below",
+      "tiled_pages": true,
+      "verify_mode": "sample",
+      "verify_sample_count": 16
+    },
+    "paper": {
+      "custom_height_mm": 210.0,
+      "custom_width_mm": 297.0,
+      "margin_bottom_mm": 10.0,
+      "margin_left_mm": 10.0,
+      "margin_right_mm": 10.0,
+      "margin_top_mm": 10.0,
+      "orientation": "landscape",
+      "preset": "A4"
+    },
+    "payload": {
+      "digits": 6,
+      "prefix": "",
+      "source": "position_mm",
+      "suffix": "",
+      "unit_scale": 1
+    },
+    "position": {
+      "datum": "symbol_centre",
+      "direction": "forward",
+      "end_index": 420,
+      "increment": 1,
+      "origin_mm": 0.0,
+      "pitch_mode": "per_cell",
+      "start_index": 0
+    },
+    "printer": {
+      "dpi": 600,
+      "measured_calibration_mm": 200.0,
+      "unprintable_margin_mm": 5.0
+    },
+    "printing": {
+      "alignment_arrows": true,
+      "calibration_length_mm": 200.0,
+      "cut_line_across_strip": false,
+      "cut_mark_length_mm": 4.0,
+      "cut_marks": true,
+      "leading_margin_mm": 20.0,
+      "registration_mark_size_mm": 5.0,
+      "registration_marks": true,
+      "scale_percent": 100.0,
+      "splice_mode": "butt",
+      "splice_overlap_mm": 0.0,
+      "trailing_margin_mm": 20.0
+    },
+    "project": {
+      "comments": "Demonstration strip: 421 codes at 25 mm pitch over 10.5 m.",
+      "company": "Disectron",
+      "engineer": "R. Kelly",
+      "machine": "GANTRY-01",
+      "project": "LINE 4 RETROFIT",
+      "revision": "B",
+      "strip_id": "AX1-POS-001"
+    },
+    "scanner": {
+      "focal_lengths_mm": [
+        6.0,
+        8.0,
+        12.0,
+        16.0,
+        25.0
+      ],
+      "min_codes_in_view": 1,
+      "mount_tilt_deg": 12.0,
+      "px_per_module": 5.0,
+      "sensor_width_mm": 4.8
+    },
+    "symbol": {
+      "qr_ecc": "M",
+      "qr_version": 0,
+      "symbology": "datamatrix_ecc200"
+    }
+  },
+  "created_utc": "2026-07-28T09:13:52Z",
+  "fingerprint": "a4f7a81c",
+  "format": "aops-project",
+  "modified_utc": "2026-07-28T09:13:52Z",
+  "schema_version": 1
+}

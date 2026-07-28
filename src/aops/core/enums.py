@@ -1,0 +1,338 @@
+"""Enumerations used across the configuration model.
+
+All of these are `StrEnum` so that a saved `.aops` project file is readable and
+diffs cleanly in version control - commissioning data gets committed alongside
+PLC source, and an engineer reviewing a change should see
+``"symbology": "datamatrix_ecc200"`` rather than ``"symbology": 0``.
+"""
+
+from __future__ import annotations
+
+from enum import IntEnum, StrEnum
+
+
+class Symbology(StrEnum):
+    """Supported and reserved symbol types.
+
+    Only DATA_MATRIX and QR are implemented. The remaining members exist so a
+    project file can *name* them and be told clearly that they are unavailable,
+    rather than silently falling back to a different symbology - see
+    `aops.symbols.placeholders`.
+    """
+
+    DATA_MATRIX = "datamatrix_ecc200"
+    QR = "qr"
+    CODE128 = "code128"
+    CODE39 = "code39"
+    AZTEC = "aztec"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            Symbology.DATA_MATRIX: "Data Matrix ECC200",
+            Symbology.QR: "QR Code",
+            Symbology.CODE128: "Code 128",
+            Symbology.CODE39: "Code 39",
+            Symbology.AZTEC: "Aztec",
+        }[self]
+
+    @property
+    def implemented(self) -> bool:
+        return self in (Symbology.DATA_MATRIX, Symbology.QR)
+
+
+class QrEcc(StrEnum):
+    """QR error-correction level."""
+
+    L = "L"
+    M = "M"
+    Q = "Q"
+    H = "H"
+
+
+class PitchMode(StrEnum):
+    """How an index maps onto physical distance when ``increment != 1``.
+
+    This distinction is safety-relevant. Printing indices 0, 3, 6 into
+    *contiguous* 25 mm cells puts index 6 at 50 mm, not 150 mm. A PLC given the
+    wrong formula drives the axis to the wrong place.
+
+    PER_CELL
+        Cells are contiguous; position is derived from the cell ordinal.
+        ``P = origin + dir * ((index - start) // increment) * pitch``
+    PER_INDEX
+        Blank cells are inserted for skipped indices, preserving the literal
+        ``P = Index * Pitch`` relationship at the cost of blank tape.
+        ``P = origin + dir * (index - start) * pitch``
+    """
+
+    PER_CELL = "per_cell"
+    PER_INDEX = "per_index"
+
+
+class Direction(StrEnum):
+    """Whether position increases or decreases with index."""
+
+    FORWARD = "forward"
+    REVERSE = "reverse"
+
+
+class Datum(StrEnum):
+    """Which feature of a cell the reported position refers to.
+
+    Changing this shifts every position by the same constant, so it folds into
+    ``origin_mm`` and never changes the position *formula*. It therefore affects
+    only the mounting diagram on the installation guide.
+    """
+
+    SYMBOL_CENTRE = "symbol_centre"
+    CELL_LEADING_EDGE = "cell_leading_edge"
+
+
+class LrMarginMode(StrEnum):
+    """Resolves the over-determination between pitch, symbol size and margin.
+
+    ``pitch = symbol + 2 * margin_lr`` has three variables and two degrees of
+    freedom. One of them must be derived.
+
+    DERIVED_FROM_PITCH
+        Pitch and symbol size are authoritative; margin is computed (default).
+    DRIVES_PITCH
+        Symbol size and margin are authoritative; pitch is computed.
+    """
+
+    DERIVED_FROM_PITCH = "derived_from_pitch"
+    DRIVES_PITCH = "drives_pitch"
+
+
+class PayloadSource(StrEnum):
+    """What the symbol actually encodes.
+
+    POSITION_MM
+        The absolute position, scaled by ``unit_scale`` and zero padded. This is
+        the implemented behaviour: the strip is self-describing, so a scanner
+        reads a real machine coordinate rather than an index the PLC must then
+        multiply.
+    INDEX / CUSTOM
+        Reserved extension points; not implemented.
+    """
+
+    POSITION_MM = "position_mm"
+    INDEX = "index"
+    CUSTOM = "custom"
+
+
+class PaperPreset(StrEnum):
+    """ISO paper sizes plus a user-defined size."""
+
+    A4 = "A4"
+    A3 = "A3"
+    A2 = "A2"
+    A1 = "A1"
+    A0 = "A0"
+    CUSTOM = "custom"
+
+    @property
+    def portrait_mm(self) -> tuple[float, float]:
+        """(width, height) in mm for portrait orientation. CUSTOM returns A4."""
+        return {
+            PaperPreset.A4: (210.0, 297.0),
+            PaperPreset.A3: (297.0, 420.0),
+            PaperPreset.A2: (420.0, 594.0),
+            PaperPreset.A1: (594.0, 841.0),
+            PaperPreset.A0: (841.0, 1189.0),
+            PaperPreset.CUSTOM: (210.0, 297.0),
+        }[self]
+
+
+class Orientation(StrEnum):
+    PORTRAIT = "portrait"
+    LANDSCAPE = "landscape"
+
+
+class ContinuousStrategy(StrEnum):
+    """How to emit a strip longer than the PDF page-size limit.
+
+    USER_UNIT
+        Shrink the MediaBox by a factor and declare ``/UserUnit`` (PDF 1.6+) so
+        the page still measures true size. One page, no joins. Honoured by
+        Acrobat 7+ and modern RIPs; the 200 mm calibration bar catches any RIP
+        that ignores it.
+    RAW_OVERSIZE
+        Emit the true oversized MediaBox. Many large-format RIPs accept it;
+        Acrobat will refuse or clamp it.
+    SPLIT_ROLL
+        Emit N single-page files each within the conformant limit. Universally
+        safe, but the shop must splice.
+    """
+
+    USER_UNIT = "user_unit"
+    RAW_OVERSIZE = "raw_oversize"
+    SPLIT_ROLL = "split_roll"
+
+
+class SpliceMode(StrEnum):
+    """How adjacent tiles meet."""
+
+    BUTT = "butt"
+    OVERLAP = "overlap"
+
+
+class PageScope(StrEnum):
+    """Whether an element appears once or on every page."""
+
+    FIRST_PAGE = "first_page"
+    EVERY_PAGE = "every_page"
+
+
+class VerifyMode(StrEnum):
+    """How much of an export is decode-verified before the file is written.
+
+    Verification re-renders each extracted module matrix and runs it back
+    through a real Data Matrix decoder. At roughly 10-40 ms per symbol it is far
+    too slow for every code on a long strip, and exactly right for a sample.
+    """
+
+    OFF = "off"
+    SAMPLE = "sample"
+    ALL = "all"
+
+
+class RulerPosition(StrEnum):
+    ABOVE = "above"
+    BELOW = "below"
+
+
+class HrPosition(StrEnum):
+    """Where the human-readable text sits relative to the symbol."""
+
+    ABOVE = "above"
+    BELOW = "below"
+
+
+class PrintMethod(StrEnum):
+    """Print process, which determines durability and media compatibility."""
+
+    LASER = "laser"
+    INKJET = "inkjet"
+    THERMAL_TRANSFER = "thermal_transfer"
+    SIGN_SHOP = "sign_shop"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            PrintMethod.LASER: "Laser (toner)",
+            PrintMethod.INKJET: "Inkjet",
+            PrintMethod.THERMAL_TRANSFER: "Thermal transfer",
+            PrintMethod.SIGN_SHOP: "Sign shop / large format",
+        }[self]
+
+
+class Ribbon(StrEnum):
+    """Thermal-transfer ribbon chemistry.
+
+    Wax scratches off synthetic stock within weeks in a machine environment;
+    resin on polyester is the 5+ year industrial choice.
+    """
+
+    NONE = "none"
+    WAX = "wax"
+    WAX_RESIN = "wax_resin"
+    RESIN = "resin"
+
+
+class Media(StrEnum):
+    """Substrate. This choice dominates 1:1 dimensional accuracy.
+
+    Paper moves roughly 3 % between 20 % and 80 % relative humidity. Over a
+    10.5 m strip that is ~315 mm of error - three orders of magnitude worse than
+    the sub-millimetre accuracy a positioning system exists to provide. Polyester
+    film is ~0.006 % over the same range.
+    """
+
+    PAPER = "paper"
+    SYNTHETIC = "synthetic"
+    POLYESTER = "polyester"
+    VINYL = "vinyl"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            Media.PAPER: "Paper",
+            Media.SYNTHETIC: "Synthetic paper",
+            Media.POLYESTER: "Polyester film",
+            Media.VINYL: "Vinyl",
+        }[self]
+
+    @property
+    def dim_stability_pct_per_rh(self) -> float:
+        """Dimensional change in percent per percentage point of relative humidity.
+
+        Derived from published 20 %->80 %RH figures (a 60-point swing):
+        paper ~3 % -> 0.05 %/%RH; coated film ~0.5 % -> 0.0083 %/%RH;
+        polyester film base ~0.006 % -> 0.0001 %/%RH.
+        """
+        return {
+            Media.PAPER: 0.05,
+            Media.SYNTHETIC: 0.0083,
+            Media.POLYESTER: 0.0001,
+            Media.VINYL: 0.0050,
+        }[self]
+
+
+class Severity(IntEnum):
+    """Validation severity. Ordered, so `max()` finds the worst finding."""
+
+    INFO = 0
+    WARNING = 1
+    ERROR = 2
+    FATAL = 3
+
+    @property
+    def label(self) -> str:
+        return self.name.capitalize()
+
+
+class FontRole(StrEnum):
+    """Backend-agnostic font selection.
+
+    Layout code names a role; each rendering backend resolves it to a concrete
+    font. Every measured string in this application (indices, distances, page
+    numbers) is monospaced by design, which is what makes the core text
+    measurement fallback exact rather than approximate.
+    """
+
+    MONO = "mono"
+    MONO_BOLD = "mono_bold"
+    SANS = "sans"
+    SANS_BOLD = "sans_bold"
+
+
+class Anchor(StrEnum):
+    """Text anchoring."""
+
+    BASELINE_LEFT = "baseline_left"
+    BASELINE_CENTRE = "baseline_centre"
+    BASELINE_RIGHT = "baseline_right"
+
+
+class LineCap(StrEnum):
+    BUTT = "butt"
+    ROUND = "round"
+    SQUARE = "square"
+
+
+class SegmentKind(StrEnum):
+    """Atomic pieces of the strip along its length.
+
+    ``CELL`` segments are indivisible - the packer may never split one across a
+    page boundary. ``LEAD``/``TRAIL``/``BLANK`` contain no ink and may be cut
+    anywhere. That single distinction is what guarantees splice safety, and it
+    is why future features (dual track, fiducials, CRC blocks) need only
+    register as atomic segments to inherit the guarantee.
+    """
+
+    LEAD = "lead"
+    CELL = "cell"
+    TRAIL = "trail"
+    BLANK = "blank"
