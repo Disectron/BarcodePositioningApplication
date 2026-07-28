@@ -30,6 +30,7 @@ from aops.controller.config_store import ConfigStore
 from aops.core.config import AopsConfig
 from aops.core.stats import DerivedGeometry
 from aops.core.validation import ValidationReport
+from aops.resources.glossary import hint_for
 from aops.ui.widgets.field_row import COMBO_VALUES, FieldRow, connect_editor
 
 
@@ -65,9 +66,16 @@ class ConfigPanel(QWidget):
         tooltip: str = "",
         section: str | None = None,
     ) -> FieldRow:
-        """Add a field row and bind its editor back to the store."""
+        """Add a field row and bind its editor back to the store.
+
+        A row with no explicit tooltip falls back to the shared hint registry,
+        so every field is explained from one place and a panel only spells one
+        out inline when it has something more contextual to say.
+        """
         path = f"{section or self.section}.{field}"
-        row = FieldRow(label, editor, path, suffix=suffix, tooltip=tooltip, parent=self)
+        row = FieldRow(
+            label, editor, path, suffix=suffix, tooltip=tooltip or hint_for(path), parent=self
+        )
         self._rows[path] = row
         self._layout.addWidget(row)
 

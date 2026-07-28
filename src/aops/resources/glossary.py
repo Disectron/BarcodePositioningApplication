@@ -285,6 +285,281 @@ SECTION_TERMS: dict[str, str] = {
 }
 
 
+#: Hover explanations for editable fields, keyed by dotted config path.
+#: `ConfigPanel.add_row` falls back to these, so a field gets its hint from
+#: here unless the panel passes something more contextual inline.
+#:
+#: Each says what the setting *is* and why you would touch it. A hint that only
+#: restates the label ("Cell pitch: the cell pitch") is worse than none.
+FIELD_HINTS: dict[str, str] = {
+    # -- 1. symbol ---------------------------------------------------------
+    "symbol.symbology": (
+        "Which kind of 2-D barcode to encode.\n\n"
+        "Data Matrix stores the same number in about half the width of a QR "
+        "code (10x10 squares against 21x21), so it needs less strip length for "
+        "the same reading distance. That is why industrial position tape uses "
+        "it."
+    ),
+    # -- 2. position -------------------------------------------------------
+    "position.start_index": (
+        "The number of the first code on the strip.\n\n"
+        "Leave at 0 unless you are printing a section of a longer strip, or "
+        "continuing one that already exists."
+    ),
+    "position.end_index": (
+        "The number of the last code.\n\n"
+        "This is what sets the strip length: roughly (end - start + 1) times "
+        "the spacing between codes."
+    ),
+    "position.increment": (
+        "Step between printed code numbers.\n\n"
+        "1 prints every code. 2 prints every other one, which halves the "
+        "number of codes and the file size - but also halves how finely the "
+        "machine can resolve position."
+    ),
+    "position.direction": (
+        "Whether position counts up or down as you move along the strip.\n\n"
+        "Use Reverse when the machine's zero is at the far end from where the "
+        "strip begins."
+    ),
+    # -- 3. payload --------------------------------------------------------
+    "payload.digits": (
+        "How many characters each code carries, zero-padded to a fixed width.\n\n"
+        "Fixed width matters because controllers parse fixed-width fields far "
+        "more easily than variable ones. Too few and the largest position "
+        "cannot be represented; too many and the symbol grows to a bigger grid "
+        "than it needs."
+    ),
+    "payload.prefix": (
+        "Optional text placed before the number inside every code.\n\n"
+        "Use it if your controller expects a marker identifying which strip it "
+        "is reading. Every extra character has to fit in the symbol, so keep "
+        "it short."
+    ),
+    "payload.suffix": (
+        "Optional text placed after the number inside every code.\n\n"
+        "Same cost as a prefix: every character makes the symbol grid larger."
+    ),
+    # -- 4. dimensions -----------------------------------------------------
+    "dimensions.pitch_mm": (
+        "Centre-to-centre distance from one code to the next.\n\n"
+        "The most consequential number here. It sets how finely the machine "
+        "can resolve position - between two codes there is nothing new to read "
+        "- and it sets the reader window you must buy, which is roughly one "
+        "spacing plus one code."
+    ),
+    "dimensions.symbol_size_mm": (
+        "Width and height of the printed square code.\n\n"
+        "Bigger reads more reliably and tolerates more dirt and damage, but "
+        "leaves less white space between codes for cutting, and forces a wider "
+        "reader window."
+    ),
+    "dimensions.strip_height_mm": (
+        "How tall the printed tape is, across the direction of travel.\n\n"
+        "It must fit your paper or roll width, and it gives the reader room to "
+        "sit slightly off-line without losing the code."
+    ),
+    "dimensions.symbol_v_offset_mm": (
+        "Shifts the codes up or down within the strip band.\n\n"
+        "Leave at 0 to keep them centred. Use it only when the reader is "
+        "mounted off-centre and cannot be moved."
+    ),
+    # -- 5. design ---------------------------------------------------------
+    "output.human_readable": (
+        "Prints each code's position as plain digits beside the symbol.\n\n"
+        "It is the same text the scanner decodes, so what you read by eye is "
+        "exactly what the machine reads - there is no second numbering that "
+        "can drift out of step. Useful during installation and fault-finding."
+    ),
+    "output.hr_position": (
+        "Whether the printed number sits above or below its code.\n\n"
+        "Below is conventional. Above can help if something covers the lower "
+        "part of the strip once installed."
+    ),
+    "output.hr_font_pt": (
+        "Size of the printed number.\n\n"
+        "Small enough not to crowd the codes, large enough to read from where "
+        "you stand at the machine."
+    ),
+    "output.engineering_ruler": (
+        "Prints a millimetre scale alongside the strip.\n\n"
+        "Useful for checking the print came out at the right size and for "
+        "measuring by eye during installation. Turn it off for clean artwork."
+    ),
+    "output.ruler_position": "Whether the scale prints above or below the strip band.",
+    "output.calibration_scope": (
+        "Whether the calibration bar prints on every sheet or only the first.\n\n"
+        "Every sheet is safer: it lets you spot a printer that drifts partway "
+        "through a long run, which one bar at the start cannot show."
+    ),
+    "output.instruction_page": (
+        "Adds the installation guide to the front of the PDF.\n\n"
+        "It is generated from these exact settings, so it can never describe a "
+        "different strip from the one printed behind it. It carries the "
+        "formula to program into the controller."
+    ),
+    "printing.registration_marks": (
+        "Small crosses at the sheet corners.\n\n"
+        "They give a visual check that the sheet printed square and complete, "
+        "and a reference to work from if the sheet is trimmed."
+    ),
+    "printing.cut_marks": (
+        "Marks showing where to cut, plus a faint outline of the strip band.\n\n"
+        "Every cut line falls in white space by design, so cutting on them can "
+        "never damage a code."
+    ),
+    "printing.alignment_arrows": (
+        "Arrows showing the direction of travel.\n\n"
+        "A strip fitted the wrong way round reads positions in reverse. That "
+        "is easy to do and unpleasant to discover once it is stuck down."
+    ),
+    # -- 6. output ---------------------------------------------------------
+    "output.tiled_pages": (
+        "Prints the strip across ordinary sheets, which you cut and join.\n\n"
+        "Use this with a normal printer. Each sheet carries its own absolute "
+        "position range so you can place it from the machine datum instead of "
+        "against the previous sheet."
+    ),
+    "output.continuous": (
+        "Prints the whole strip as one long page.\n\n"
+        "Needs roll media or a large-format printer. It removes splices "
+        "entirely - nothing to cut, nothing to align, and no error that can "
+        "accumulate along the strip."
+    ),
+    "output.continuous_max_length_mm": (
+        "Longest single piece to produce when a continuous strip is split into "
+        "rolls.\n\nSet it to what your printer and media can actually handle "
+        "in one pass."
+    ),
+    "output.verify_sample_count": (
+        "How many codes to decode-check before the file is written.\n\n"
+        "Sixteen costs about half a second and turns 'the file is probably "
+        "right' into evidence."
+    ),
+    # -- 7. paper ----------------------------------------------------------
+    "paper.orientation": (
+        "Landscape runs the strip along the long edge of the sheet, fitting "
+        "more codes per sheet and so needing fewer joins.\n\n"
+        "Portrait is rarely the right choice for a strip."
+    ),
+    "paper.custom_width_mm": "Sheet width. Used only when the size is set to Custom.",
+    "paper.custom_height_mm": "Sheet height. Used only when the size is set to Custom.",
+    "paper.margin_left_mm": (
+        "Blank border at the left edge.\n\n"
+        "In landscape this runs along the strip, so it directly reduces how "
+        "many codes fit on each sheet. Keep it as small as your printer allows."
+    ),
+    "paper.margin_right_mm": (
+        "Blank border at the right edge.\n\n"
+        "In landscape this runs along the strip, so it directly reduces how "
+        "many codes fit on each sheet."
+    ),
+    "paper.margin_top_mm": (
+        "Blank border at the top edge.\n\n"
+        "In landscape this runs across the strip, so it limits the strip "
+        "height and the room available for the ruler and calibration bar."
+    ),
+    "paper.margin_bottom_mm": (
+        "Blank border at the bottom edge.\n\n"
+        "In landscape this runs across the strip, so it limits the strip "
+        "height and the room available for the ruler and calibration bar."
+    ),
+    # -- 8. print ----------------------------------------------------------
+    "printing.calibration_length_mm": (
+        "Nominal length of the printed calibration bar.\n\n"
+        "After printing, measure the bar with a steel rule. If it does not "
+        "measure exactly this, the printer is not at 1:1 and the scaling needs "
+        "correcting. 200 mm is long enough to measure accurately and still "
+        "fits any sheet."
+    ),
+    "printing.leading_margin_mm": (
+        "Blank tape before the first code.\n\n"
+        "Gives you something to hold and stick down without covering a code, "
+        "and room for the reader to sit before position zero."
+    ),
+    "printing.trailing_margin_mm": (
+        "Blank tape after the last code. Same purpose as the leading margin, "
+        "at the far end."
+    ),
+    "printing.registration_mark_size_mm": "Size of the corner registration crosses.",
+    "printing.cut_mark_length_mm": "Length of the cut marks at the sheet edges.",
+    "printing.splice_mode": (
+        "How consecutive sheets are meant to meet: butted edge to edge, or "
+        "overlapped.\n\n"
+        "This describes the artwork only. However they meet, place each sheet "
+        "by measuring from the machine datum rather than against the previous "
+        "sheet, or the error accumulates down the whole strip."
+    ),
+    "printing.splice_overlap_mm": (
+        "How far one sheet overlaps the next, in Overlap mode.\n\n"
+        "It must stay within the white space, or the overlap will cover a "
+        "code's clear border and stop it reading."
+    ),
+    # -- 9. media and printer ---------------------------------------------
+    "media.method": (
+        "How the image is put onto the material.\n\n"
+        "Thermal transfer melts resin from a ribbon onto the surface and is "
+        "the durable industrial choice. Direct thermal uses no ribbon and "
+        "fades. Laser and inkjet are fine for proofs but need stock rated for "
+        "them."
+    ),
+    "media.adhesive_backed": (
+        "Whether the material has adhesive backing.\n\n"
+        "It changes the mounting advice on the guide, and whether the strip is "
+        "bonded along its length - which is what decides how much thermal "
+        "expansion reaches the position reading."
+    ),
+    "printer.dpi": (
+        "Your printer's resolution.\n\n"
+        "It decides how many printer dots make up each small square of a code. "
+        "Below 3 dots per square the edges break up and scanners start "
+        "failing; 5 or more is comfortable."
+    ),
+    "printer.unprintable_margin_mm": (
+        "How close to the paper edge your printer can actually print.\n\n"
+        "Used to warn you when the page margins fall inside it and content "
+        "would be clipped. Set it to 0 for a label printer, which prints the "
+        "full width of the roll."
+    ),
+    # -- 10. scanner -------------------------------------------------------
+    "scanner.px_per_module": (
+        "How many camera pixels should cover each small square of a code.\n\n"
+        "About 5 is the usual industrial target. This is what turns your "
+        "geometry into a sensor resolution you can specify when buying."
+    ),
+    # -- 11. project -------------------------------------------------------
+    "project.machine": (
+        "Which machine this strip is for. Printed on every sheet, so a strip "
+        "found loose on a bench can be traced back."
+    ),
+    "project.project": (
+        "The job or installation this strip belongs to. Printed on every sheet."
+    ),
+    "project.strip_id": (
+        "Your own reference for this strip, such as AX1-POS-001.\n\n"
+        "Worth setting: a machine with several axes has several strips, and "
+        "they are very hard to tell apart once printed."
+    ),
+    "project.revision": (
+        "Which version of this design was printed.\n\n"
+        "Raise it whenever you reprint after changing anything, so an old "
+        "strip still on the machine can be told apart from the new one."
+    ),
+    "project.engineer": "Who prepared this strip. Printed on the guide page for traceability.",
+    "project.company": "Your organisation. Printed on the guide page.",
+    "project.comments": (
+        "Free notes printed on the installation guide.\n\n"
+        "Use it for whatever the next person needs to know - mounting quirks, "
+        "which reader was fitted, why a value was chosen."
+    ),
+}
+
+
+def hint_for(path: str) -> str:
+    """Hover explanation for an editable field, or empty if none is registered."""
+    return FIELD_HINTS.get(path, "")
+
+
 def label_for(key: str, fallback: str) -> str:
     """Plain-language label for a row key."""
     term = TERMS.get(key)

@@ -485,14 +485,25 @@ class PrintPanel(ConfigPanel):
             "trailing_margin_mm", "Trailing margin",
             make_double(cfg.printing.trailing_margin_mm, maximum=5000.0, decimals=1), suffix="mm",
         )
-        self.add_row("registration_marks", "", make_check("Registration marks", cfg.printing.registration_marks))
-        self.add_row("cut_marks", "", make_check("Cut marks", cfg.printing.cut_marks))
+        # The on/off switches for these live in Design, with the print style
+        # that owns them; what belongs here is their size.
+        self.add_row(
+            "registration_mark_size_mm", "Registration mark size",
+            make_double(cfg.printing.registration_mark_size_mm, minimum=1.0, maximum=50.0,
+                        step=0.5, decimals=1),
+            suffix="mm",
+        )
+        self.add_row(
+            "cut_mark_length_mm", "Cut mark length",
+            make_double(cfg.printing.cut_mark_length_mm, minimum=1.0, maximum=50.0,
+                        step=0.5, decimals=1),
+            suffix="mm",
+        )
         self.add_row(
             "cut_line_across_strip", "",
             make_check("Cut line across strip", cfg.printing.cut_line_across_strip),
             tooltip="Off by default: ink drawn through the strip band can confuse a reader.",
         )
-        self.add_row("alignment_arrows", "", make_check("Alignment arrows", cfg.printing.alignment_arrows))
         self.add_row(
             "splice_mode", "Splice mode",
             make_combo([("Butt", SpliceMode.BUTT), ("Overlap", SpliceMode.OVERLAP)],

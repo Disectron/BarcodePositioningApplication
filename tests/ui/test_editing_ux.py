@@ -383,3 +383,62 @@ def test_glossary_covers_every_summary_row(app):
 
     missing = [k for g in groups for k in g._rows if k not in TERMS]
     assert missing == [], f"no glossary entry for: {missing}"
+
+
+# -- hint coverage ----------------------------------------------------------
+
+
+def _all_panels():
+    from aops.controller.config_store import ConfigStore
+    from aops.ui.panels.sections import PANEL_SPECS
+
+    store = ConfigStore()
+    return [(key, cls(store)) for key, _title, cls in PANEL_SPECS]
+
+
+def test_every_configuration_field_is_explained(app):
+    """A field with no hint is a field the user has to guess at."""
+    gaps = [
+        f"{key}: {path}"
+        for key, panel in _all_panels()
+        for path, row in panel.rows().items()
+        if not row._base_tooltip
+    ]
+    assert gaps == [], f"fields with no explanation: {gaps}"
+
+
+def test_hints_say_more_than_the_label(app):
+    """A hint that restates its label is worse than none - it wastes a hover."""
+    lazy = []
+    for key, panel in _all_panels():
+        for path, row in panel.rows().items():
+            hint = row._base_tooltip
+            if len(hint) < 25:
+                lazy.append(f"{key}: {path} -> {hint!r}")
+    assert lazy == [], f"hints too short to be useful: {lazy}"
+
+
+def test_no_field_is_offered_by_two_panels(app):
+    """Two panels editing one field is a confusing thing to hand a user."""
+    seen: dict[str, str] = {}
+    duplicates = []
+    for key, panel in _all_panels():
+        for path in panel.rows():
+            if path in seen:
+                duplicates.append(f"{path} in both {seen[path]} and {key}")
+            seen[path] = key
+    assert duplicates == [], f"duplicated fields: {duplicates}"
+
+
+def test_every_registered_hint_belongs_to_a_real_field(app):
+    """A hint keyed on a renamed field silently stops being shown."""
+    from aops.core.config import AopsConfig
+    from aops.resources.glossary import FIELD_HINTS
+
+    unknown = []
+    for path in FIELD_HINTS:
+        section, _, field = path.partition(".")
+        obj = getattr(AopsConfig(), section, None)
+        if obj is None or not hasattr(obj, field):
+            unknown.append(path)
+    assert unknown == [], f"hints for fields that do not exist: {unknown}"
