@@ -178,6 +178,23 @@ margin on cutting accuracy. `verify_splices()` re-derives the property *independ
 placed geometry, and runs both in the test suite and again at export time, so a packer bug cannot
 silently ship a strip with a symbol cut in half.
 
+### …or avoid splices altogether, with a label printer
+
+A thermal-transfer label printer running continuous polyester with a resin ribbon is arguably the
+*right* device for this job rather than a fallback. The media is continuous, so the strip prints in
+one piece: no page boundaries to cut, no per-tile datum alignment, and the 21 mm butt-splice error
+simply does not arise. Roll widths are selectable as paper presets (2″–8″, stated as printable
+width), and choosing one steers you towards continuous output (`PAG-008`/`PAG-009`).
+
+The trap that catches people is quiet, so it is a hard error (`PAG-010`): **what has to fit across
+the roll is the whole band stack, not the strip band.** Header, ruler, calibration bar and footer
+take the default 40 mm strip to 92 mm — so a 4″ (104 mm) roll at the default 10 mm margins leaves
+84 mm usable and clips the artwork, despite being nearly three times wider than the strip itself.
+
+`Direct thermal` is also selectable and warns (`MED-009`): the image is heat-sensitive stock
+reacting to heat, so the same heat keeps acting on it near a warm machine. Fine for a trial strip,
+wrong for a multi-year fixture.
+
 ### Symbols are vector, and verified
 
 The Data Matrix encoder returns a bitmap, so AOPS recovers the **module matrix** from it and draws

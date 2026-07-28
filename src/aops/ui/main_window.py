@@ -85,6 +85,8 @@ class MainWindow(QMainWindow):
         # ---- left: configuration accordion
         self._accordion = AccordionPanel()
         self._panels = {}
+        #: Expansion state saved while a filter is active, restored on clear.
+        self._expanded_before_filter: dict[str, bool] | None = None
         for key, title, panel_cls in PANEL_SPECS:
             section = self._accordion.add_section(key, title)
             panel = panel_cls(self._store, section)
@@ -94,6 +96,7 @@ class MainWindow(QMainWindow):
             # a wall of controls.
             section.set_expanded(key in ("symbol", "position", "dimensions"))
         self._accordion.finish()
+        self._accordion.filterChanged.connect(self._on_filter_changed)
 
         left_scroll = QScrollArea(self)
         left_scroll.setWidget(self._accordion)
@@ -182,6 +185,9 @@ class MainWindow(QMainWindow):
         bar.addSeparator()
         self._act_undo = add("Undo", self._store.undo, "Ctrl+Z")
         self._act_redo = add("Redo", self._store.redo, "Ctrl+Y")
+        bar.addSeparator()
+        add("Find setting", self._accordion.focus_filter, "Ctrl+F",
+            "Jump to the filter box and search every section by name.")
         bar.addSeparator()
         add("Fit width", self._preview.fit_width, "Ctrl+0")
         add("1:1", self._preview.zoom_actual)
@@ -273,6 +279,37 @@ class MainWindow(QMainWindow):
             self._status_detail.setText(
                 f"Ready to export. {len(warnings)} warning(s)." if warnings else "Ready to export."
             )
+
+    @Slot(str)
+    def _on_filter_changed(self, needle: str) -> None:
+        """Show only sections containing a matching field.
+
+        A filtered section is force-expanded so its matches are actually
+        visible; clearing the filter restores whatever the user had open, so
+        searching for something does not quietly rearrange the panel.
+        """
+        active = bool(needle.strip())
+        if active and self._expanded_before_filter is None:
+            self._expanded_before_filter = {
+                key: section.is_expanded()
+                for key, section in self._accordion.sections().items()
+            }
+
+        for key, section in self._accordion.sections().items():
+            panel = self._panels.get(key)
+            if panel is None:
+                continue
+            matches = panel.apply_filter(needle)
+            section.set_visible_for_filter(matches > 0 or not active)
+            if active:
+                section.set_expanded(matches > 0)
+
+        if not active and self._expanded_before_filter is not None:
+            for key, was_open in self._expanded_before_filter.items():
+                section = self._accordion.section(key)
+                if section is not None:
+                    section.set_expanded(was_open)
+            self._expanded_before_filter = None
 
     @Slot(object)
     def _on_preview(self, draw_list: DrawList) -> None:

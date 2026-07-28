@@ -10,7 +10,9 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
+    QLineEdit,
     QSizePolicy,
     QToolButton,
     QVBoxLayout,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from aops.core.enums import Severity
 from aops.ui.theme.palette import SEVERITY_COLOURS
+from aops.ui.widgets.field_row import STEP_HINT
 
 
 class AccordionSection(QWidget):
@@ -67,6 +70,9 @@ class AccordionSection(QWidget):
         self.header.setChecked(expanded)
         self._apply(expanded)
 
+    def is_expanded(self) -> bool:
+        return self.header.isChecked()
+
     def _on_clicked(self) -> None:
         self._apply(self.header.isChecked())
         self.toggled.emit(self.header.isChecked())
@@ -90,8 +96,15 @@ class AccordionSection(QWidget):
             self.header.setStyleSheet("")
 
 
+    def set_visible_for_filter(self, visible: bool) -> None:
+        """Hide the whole section when a filter matched nothing inside it."""
+        self.setVisible(visible)
+
+
 class AccordionPanel(QWidget):
-    """Vertical stack of accordion sections."""
+    """Vertical stack of accordion sections, with a filter box above them."""
+
+    filterChanged = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -100,6 +113,47 @@ class AccordionPanel(QWidget):
         self._layout.setSpacing(0)
         self._sections: dict[str, AccordionSection] = {}
         self._counter = 0
+
+        self._layout.addWidget(self._build_toolbar())
+
+    def _build_toolbar(self) -> QWidget:
+        """Filter box plus expand/collapse, above the sections.
+
+        With eleven sections and sixty-odd fields, "which box was the quiet
+        zone in?" is a real question. Typing 'quiet' answers it without the
+        user needing to know which section owns the field.
+        """
+        bar = QWidget(self)
+        row = QVBoxLayout(bar)
+        row.setContentsMargins(0, 0, 0, 6)
+        row.setSpacing(4)
+
+        top = QHBoxLayout()
+        top.setSpacing(4)
+
+        self.filter_edit = QLineEdit(bar)
+        self.filter_edit.setPlaceholderText("Filter settings...   (Ctrl+F)")
+        self.filter_edit.setClearButtonEnabled(True)
+        self.filter_edit.textChanged.connect(self.filterChanged.emit)
+        top.addWidget(self.filter_edit, 1)
+
+        self.expand_button = QToolButton(bar)
+        self.expand_button.setText("Expand all")
+        self.expand_button.clicked.connect(lambda: self.set_all_expanded(True))
+        top.addWidget(self.expand_button)
+
+        self.collapse_button = QToolButton(bar)
+        self.collapse_button.setText("Collapse all")
+        self.collapse_button.clicked.connect(lambda: self.set_all_expanded(False))
+        top.addWidget(self.collapse_button)
+
+        row.addLayout(top)
+
+        hint = QLabel(STEP_HINT, bar)
+        hint.setProperty("sectionCaption", True)
+        row.addWidget(hint)
+
+        return bar
 
     def add_section(self, key: str, title: str) -> AccordionSection:
         self._counter += 1
@@ -116,3 +170,14 @@ class AccordionPanel(QWidget):
 
     def sections(self) -> dict[str, AccordionSection]:
         return dict(self._sections)
+
+    def set_all_expanded(self, expanded: bool) -> None:
+        for section in self._sections.values():
+            section.set_expanded(expanded)
+
+    def focus_filter(self) -> None:
+        self.filter_edit.setFocus()
+        self.filter_edit.selectAll()
+
+    def filter_text(self) -> str:
+        return self.filter_edit.text()

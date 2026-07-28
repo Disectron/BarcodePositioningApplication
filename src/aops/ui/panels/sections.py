@@ -329,7 +329,13 @@ class PaperPanel(ConfigPanel):
         cfg = self._store.config
         self.add_row(
             "preset", "Paper size",
-            make_combo([(m.value.upper(), m) for m in PaperPreset], cfg.paper.preset),
+            make_combo([(m.display_name, m) for m in PaperPreset], cfg.paper.preset),
+            tooltip=(
+                "Sheet sizes tile the strip across pages. A label-printer roll prints "
+                "it continuously instead, with no page boundaries to cut or align - "
+                "which is why a thermal-transfer label printer on continuous polyester "
+                "is the best match for this job."
+            ),
         )
         self.add_row(
             "orientation", "Orientation",
@@ -360,10 +366,18 @@ class PaperPanel(ConfigPanel):
         self.width.setEnabled(custom)
         self.height.setEnabled(custom)
         w, h = cfg.paper.sheet_size_mm()
-        self.usable.setText(
-            f"{cfg.paper.usable_width_mm():.1f} x {cfg.paper.usable_height_mm():.1f} "
-            f"of {w:.0f} x {h:.0f} mm"
-        )
+        if cfg.paper.preset.is_roll:
+            # Roll length is unbounded, so a "sheet size" readout would be a
+            # fiction; the width across the roll is the real constraint.
+            self.usable.setText(
+                f"{cfg.paper.usable_height_mm():.1f} mm across a "
+                f"{cfg.paper.preset.roll_width_mm:.0f} mm roll, continuous length"
+            )
+        else:
+            self.usable.setText(
+                f"{cfg.paper.usable_width_mm():.1f} x {cfg.paper.usable_height_mm():.1f} "
+                f"of {w:.0f} x {h:.0f} mm"
+            )
 
 
 class PrintPanel(ConfigPanel):

@@ -135,6 +135,29 @@ class ConfigPanel(QWidget):
         row.editor.setFocus()
         return True
 
+    def apply_filter(self, needle: str) -> int:
+        """Show only rows matching `needle`. Returns how many survived.
+
+        Non-row widgets (notes, buttons, readouts) are hidden while a filter is
+        active: leaving a stray "Apply measurement" button under three matched
+        rows reads as though it belongs to them.
+        """
+        needle = needle.strip().lower()
+        matches = 0
+        for row in self._rows.values():
+            visible = row.matches(needle)
+            row.setVisible(visible)
+            matches += int(visible)
+
+        bound = set(self._rows.values())
+        for i in range(self._layout.count()):
+            item = self._layout.itemAt(i)
+            widget = item.widget() if item is not None else None
+            if widget is not None and widget not in bound:
+                widget.setVisible(not needle)
+
+        return matches
+
     def rows(self) -> dict[str, FieldRow]:
         return dict(self._rows)
 

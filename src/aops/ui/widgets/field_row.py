@@ -7,6 +7,19 @@ rather than reporting "invalid geometry" somewhere far away from the cause.
 Every numeric editor is created with keyboard tracking disabled. Without that,
 typing "25" into a pitch box momentarily applies a pitch of 2 and triggers a
 full recompute against a geometry the user never asked for.
+
+Numeric editors also take two deliberate departures from stock Qt behaviour:
+
+* **The wheel does not edit an unfocused box.** The whole configuration panel
+  lives in a scroll area, and Qt's default is for a spin box under the pointer
+  to swallow the wheel event. Scrolling past a column of spin boxes would
+  silently change several values, which on this panel means silently changing
+  the printed strip. An unfocused box now passes the event up to the scroll
+  area; click or tab into it first to use the wheel.
+* **Ctrl and Shift scale the step.** One step size never suits both "nudge the
+  pitch by a hundredth" and "move it by ten millimetres", so Ctrl multiplies
+  the step by ten and Shift divides it by ten, on the arrows and the wheel
+  alike.
 """
 
 from __future__ import annotations
@@ -15,7 +28,9 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -33,6 +48,68 @@ from aops.core.enums import Severity
 from aops.core.validation import Finding
 
 LABEL_WIDTH = 132
+
+#: Shown once next to the filter box rather than on every tooltip.
+STEP_HINT = "Ctrl = x10 step,  Shift = /10 step"
+
+
+def _step_factor() -> float:
+    """Multiplier applied to the single step by the held modifiers."""
+    mods = QApplication.keyboardModifiers()
+    factor = 1.0
+    if mods & Qt.KeyboardModifier.ControlModifier:
+        factor *= 10.0
+    if mods & Qt.KeyboardModifier.ShiftModifier:
+        factor /= 10.0
+    return factor
+
+
+class AopsDoubleSpinBox(QDoubleSpinBox):
+    """Double spin box that ignores the wheel unless focused, and scales steps."""
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        if not self.hasFocus():
+            event.ignore()
+            return
+        super().wheelEvent(event)
+
+    def stepBy(self, steps: int) -> None:
+        factor = _step_factor()
+        if factor == 1.0:
+            super().stepBy(steps)
+            return
+        base = self.singleStep()
+        # A scaled step must still be representable at this many decimals, or
+        # Shift would round to zero and the box would appear frozen.
+        scaled = max(base * factor, 10.0**-self.decimals())
+        self.setSingleStep(scaled)
+        try:
+            super().stepBy(steps)
+        finally:
+            self.setSingleStep(base)
+
+
+class AopsSpinBox(QSpinBox):
+    """Integer spin box with the same wheel and step-scaling behaviour."""
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        if not self.hasFocus():
+            event.ignore()
+            return
+        super().wheelEvent(event)
+
+    def stepBy(self, steps: int) -> None:
+        factor = _step_factor()
+        if factor == 1.0:
+            super().stepBy(steps)
+            return
+        base = self.singleStep()
+        scaled = max(1, int(round(base * factor)))
+        self.setSingleStep(scaled)
+        try:
+            super().stepBy(steps)
+        finally:
+            self.setSingleStep(base)
 
 
 class FieldRow(QFrame):
@@ -77,6 +154,13 @@ class FieldRow(QFrame):
             self.setToolTip(tooltip)
             editor.setToolTip(tooltip)
 
+        # Everything the filter box searches, lowercased once at build time.
+        self._haystack = " ".join((label, suffix, tooltip, path)).lower()
+
+    def matches(self, needle: str) -> bool:
+        """True when this row should survive the filter."""
+        return not needle or needle in self._haystack
+
     def apply_findings(self, findings: Iterable[Finding]) -> None:
         """Colour the row and show the message, or clear it."""
         worst: Finding | None = None
@@ -109,7 +193,7 @@ def make_double(
     step: float = 0.5,
     decimals: int = 3,
 ) -> QDoubleSpinBox:
-    box = QDoubleSpinBox()
+    box = AopsDoubleSpinBox()
     box.setRange(minimum, maximum)
     box.setDecimals(decimals)
     box.setSingleStep(step)
@@ -117,23 +201,43 @@ def make_double(
     # Suppress per-keystroke valueChanged - see module docstring.
     box.setKeyboardTracking(False)
     box.setAlignment(Qt.AlignmentFlag.AlignRight)
+    # StrongFocus rather than the default WheelFocus: the wheel must not be able
+    # to give a box focus, or scrolling the panel would arm the next scroll to
+    # edit it.
+    box.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     return box
 
 
 def make_int(
     value: int, *, minimum: int = 0, maximum: int = 1_000_000, step: int = 1
 ) -> QSpinBox:
-    box = QSpinBox()
+    box = AopsSpinBox()
     box.setRange(minimum, maximum)
     box.setSingleStep(step)
     box.setValue(value)
     box.setKeyboardTracking(False)
     box.setAlignment(Qt.AlignmentFlag.AlignRight)
+    box.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     return box
 
 
 #: Attribute holding the Python-side value list for a combo box.
 COMBO_VALUES = "_aops_values"
+
+
+class AopsComboBox(QComboBox):
+    """Combo box that ignores the wheel unless focused.
+
+    Same reasoning as the spin boxes, with a sharper edge: a stray wheel notch
+    over the substrate combo silently swaps polyester for paper, and over the
+    symbology combo it selects a symbology that refuses to export.
+    """
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        if not self.hasFocus():
+            event.ignore()
+            return
+        super().wheelEvent(event)
 
 
 def make_combo(items: Iterable[tuple[str, Any]], current: Any) -> QComboBox:
@@ -147,7 +251,7 @@ def make_combo(items: Iterable[tuple[str, Any]], current: Any) -> QComboBox:
 
     So the values are kept on the Python side and indexed positionally.
     """
-    combo = QComboBox()
+    combo = AopsComboBox()
     values: list[Any] = []
     for text, data in items:
         combo.addItem(text)
@@ -156,6 +260,7 @@ def make_combo(items: Iterable[tuple[str, Any]], current: Any) -> QComboBox:
 
     if current in values:
         combo.setCurrentIndex(values.index(current))
+    combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     return combo
 
 

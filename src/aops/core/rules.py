@@ -36,6 +36,7 @@ from aops.core.enums import (
     Symbology,
 )
 from aops.core.errors import GeometryError
+from aops.core.layout.bands import solve_bands
 from aops.core.stats import DerivedGeometry
 from aops.core.units import PDF_MAX_PT, PDF_MAX_USER_UNIT, mm_per_dot
 from aops.core.validation import Finding, Rule
@@ -439,6 +440,51 @@ def pag_leading(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fi
 # --------------------------------------------------------------------------
 
 
+def pag_roll_media(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """Roll media removes the splice problem, but only if continuous is used.
+
+    Tiling onto a continuous roll is the worst of both worlds: the operator
+    still has to cut and datum-align every tile, having bought media that made
+    neither necessary.
+    """
+    preset = cfg.paper.preset
+    if not preset.is_roll:
+        return
+
+    if cfg.output.tiled_pages and not cfg.output.continuous:
+        yield _f("PAG-008", Severity.WARNING,
+                 "Roll media is selected but the output is tiled sheets, so the strip "
+                 "is still cut into pieces that each need datum alignment.",
+                 "output.continuous",
+                 "Turn on continuous output to print the strip in one piece - roll media "
+                 "removes splices entirely.")
+    elif cfg.output.continuous:
+        yield _f("PAG-009", Severity.INFO,
+                 f"Continuous roll output: the strip prints in one piece with no page "
+                 f"boundaries, so there is nothing to cut or datum-align and the "
+                 f"{derived.accuracy.cumulative_error_mm:.1f} mm butt-splice error does "
+                 f"not arise." if derived else
+                 "Continuous roll output: the strip prints in one piece with no splices.",
+                 "output.continuous")
+
+    # The printed page is the whole band stack - header, ruler, calibration bar
+    # and footer as well as the strip band - which at the defaults is over twice
+    # the strip height. Measuring the strip band alone would let a job that
+    # overflows the roll pass. `pag_height` covers the same ground for tiled
+    # output only, so continuous roll jobs would otherwise go unchecked.
+    bands = solve_bands(cfg, with_calibration=cfg.output.calibration_bar)
+    needed = max(bands.total_height_mm, cfg.dimensions.strip_height_mm)
+    available = cfg.paper.usable_height_mm()
+    if needed > available:
+        yield _f("PAG-010", Severity.ERROR,
+                 f"The printed band stack is {needed:.1f} mm across but only "
+                 f"{available:.1f} mm of the {preset.roll_width_mm:.0f} mm roll is usable "
+                 f"after margins. The edges would be clipped.",
+                 "paper.preset",
+                 "Use a wider roll, reduce the strip height, turn off the ruler or "
+                 "calibration bar, or reduce the margins.")
+
+
 def con_selected(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     if not cfg.output.tiled_pages and not cfg.output.continuous:
         yield _f("CON-004", Severity.WARNING,
@@ -667,6 +713,22 @@ def med_process(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fi
     if m.method is PrintMethod.THERMAL_TRANSFER and m.ribbon is Ribbon.NONE:
         yield _f("MED-004", Severity.ERROR,
                  "Thermal transfer requires a ribbon.", "media.ribbon")
+    if m.method is PrintMethod.DIRECT_THERMAL:
+        # The one print method that is wrong for this application on its own
+        # terms: the image is the substrate reacting to heat, so the same heat
+        # keeps acting on it for the rest of its life.
+        yield _f("MED-009", Severity.WARNING,
+                 "Direct thermal images fade with heat, sunlight and abrasion, and "
+                 "darken wholesale near a warm machine. A positioning strip is a "
+                 "multi-year fixture; this is only suitable for a temporary or trial "
+                 "strip.",
+                 "media.method",
+                 "Use thermal transfer with a resin ribbon on polyester for anything "
+                 "left on a machine.")
+        if m.ribbon is not Ribbon.NONE:
+            yield _f("MED-010", Severity.INFO,
+                     "Direct thermal takes no ribbon; the ribbon setting is ignored.",
+                     "media.ribbon", "Set the ribbon to None.")
     if not (m.method is PrintMethod.THERMAL_TRANSFER and m.ribbon is Ribbon.RESIN):
         yield _f("MED-005", Severity.INFO,
                  "For a long-service industrial strip, resin ribbon on polyester is the "
@@ -754,6 +816,7 @@ ALL_RULES: tuple[Rule, ...] = (
     pag_last_page,
     pag_margins,
     pag_leading,
+    pag_roll_media,
     con_selected,
     con_limits,
     prn_scaling,

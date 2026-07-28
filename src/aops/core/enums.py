@@ -123,13 +123,31 @@ class PayloadSource(StrEnum):
 
 
 class PaperPreset(StrEnum):
-    """ISO paper sizes plus a user-defined size."""
+    """ISO sheet sizes, label-printer roll widths, and a user-defined size.
+
+    The roll entries exist because a label printer is arguably the *right*
+    device for this job rather than a concession. A thermal-transfer label
+    printer running continuous polyester with a resin ribbon produces exactly
+    the industrial tape this tool is designed around, and because the media is
+    continuous it removes the splice problem altogether - no page boundaries,
+    so no cutting accuracy to worry about and no per-tile datum alignment.
+
+    Roll widths are stated as *printable* width, which is what constrains the
+    artwork; media is typically a few millimetres wider. The nominal length of
+    one metre is only the tile size used when tiled output is selected, and is
+    irrelevant to a continuous export.
+    """
 
     A4 = "A4"
     A3 = "A3"
     A2 = "A2"
     A1 = "A1"
     A0 = "A0"
+    ROLL_2IN = "roll_2in"
+    ROLL_3IN = "roll_3in"
+    ROLL_4IN = "roll_4in"
+    ROLL_6IN = "roll_6in"
+    ROLL_8IN = "roll_8in"
     CUSTOM = "custom"
 
     @property
@@ -141,8 +159,32 @@ class PaperPreset(StrEnum):
             PaperPreset.A2: (420.0, 594.0),
             PaperPreset.A1: (594.0, 841.0),
             PaperPreset.A0: (841.0, 1189.0),
+            PaperPreset.ROLL_2IN: (48.0, 1000.0),
+            PaperPreset.ROLL_3IN: (72.0, 1000.0),
+            PaperPreset.ROLL_4IN: (104.0, 1000.0),
+            PaperPreset.ROLL_6IN: (152.0, 1000.0),
+            PaperPreset.ROLL_8IN: (203.0, 1000.0),
             PaperPreset.CUSTOM: (210.0, 297.0),
         }[self]
+
+    @property
+    def is_roll(self) -> bool:
+        """True for continuous label-printer roll media."""
+        return self.name.startswith("ROLL_")
+
+    @property
+    def roll_width_mm(self) -> float:
+        """Printable width across the roll. Zero for sheet media."""
+        return self.portrait_mm[0] if self.is_roll else 0.0
+
+    @property
+    def display_name(self) -> str:
+        if self is PaperPreset.CUSTOM:
+            return "Custom"
+        if self.is_roll:
+            inches = self.name.removeprefix("ROLL_").removesuffix("IN")
+            return f'Label roll {inches}" ({self.roll_width_mm:.0f} mm printable)'
+        return self.value
 
 
 class Orientation(StrEnum):
@@ -216,6 +258,7 @@ class PrintMethod(StrEnum):
     LASER = "laser"
     INKJET = "inkjet"
     THERMAL_TRANSFER = "thermal_transfer"
+    DIRECT_THERMAL = "direct_thermal"
     SIGN_SHOP = "sign_shop"
 
     @property
@@ -223,9 +266,15 @@ class PrintMethod(StrEnum):
         return {
             PrintMethod.LASER: "Laser (toner)",
             PrintMethod.INKJET: "Inkjet",
-            PrintMethod.THERMAL_TRANSFER: "Thermal transfer",
+            PrintMethod.THERMAL_TRANSFER: "Thermal transfer (label printer)",
+            PrintMethod.DIRECT_THERMAL: "Direct thermal (no ribbon)",
             PrintMethod.SIGN_SHOP: "Sign shop / large format",
         }[self]
+
+    @property
+    def uses_ribbon(self) -> bool:
+        """Direct thermal marks heat-sensitive stock and takes no ribbon."""
+        return self is PrintMethod.THERMAL_TRANSFER
 
 
 class Ribbon(StrEnum):
