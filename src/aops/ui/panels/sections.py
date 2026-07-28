@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtWidgets import QPushButton
 
 from aops.core.config import AopsConfig
+from aops.core.design import STYLE_FLAGS, detect_style
 from aops.core.enums import (
     ContinuousStrategy,
     Datum,
@@ -18,6 +19,7 @@ from aops.core.enums import (
     PaperPreset,
     PitchMode,
     PrintMethod,
+    PrintStyle,
     QrEcc,
     Ribbon,
     RulerPosition,
@@ -31,6 +33,8 @@ from aops.symbols.placeholders import PLACEHOLDER_REASONS
 from aops.ui.panels.base import ConfigPanel, enum_items
 from aops.ui.widgets.field_row import (
     COMBO_VALUES,
+    FieldRow,
+    combo_value,
     make_check,
     make_combo,
     make_double,
@@ -249,6 +253,107 @@ class DimensionPanel(ConfigPanel):
             self.clearance.setText("-")
 
 
+class DesignPanel(ConfigPanel):
+    """What the printed page looks like, as opposed to which files come out.
+
+    The style combo is deliberately *not* bound to a config field. There is no
+    stored style - it is derived from the switches below by `detect_style`, so
+    the two can never drift apart. Selecting a style writes the switches;
+    touching a switch moves the combo to Custom on the next refresh.
+    """
+
+    section = "output"
+
+    def build(self) -> None:
+        cfg = self._store.config
+
+        self.style_combo = make_combo(
+            [(s.display_name, s) for s in PrintStyle], detect_style(cfg)
+        )
+        self.style_combo.currentIndexChanged.connect(self._on_style_changed)
+        self.add_widget(FieldRow("Print style", self.style_combo, "", parent=self))
+
+        self.style_note = self.add_note("")
+
+        self.add_row("human_readable", "", make_check("Position printed under each symbol",
+                                                      cfg.output.human_readable))
+        self.add_row(
+            "hr_position", "Text position",
+            make_combo([("Below symbol", HrPosition.BELOW), ("Above symbol", HrPosition.ABOVE)],
+                       cfg.output.hr_position),
+        )
+        self.add_row(
+            "hr_font_pt", "Text size",
+            make_double(cfg.output.hr_font_pt, minimum=3.0, maximum=24.0, step=0.5, decimals=1),
+            suffix="pt",
+        )
+        self.add_row("engineering_ruler", "", make_check("Engineering ruler (scale)",
+                                                         cfg.output.engineering_ruler))
+        self.add_row(
+            "ruler_position", "Ruler position",
+            make_combo([("Below strip", RulerPosition.BELOW), ("Above strip", RulerPosition.ABOVE)],
+                       cfg.output.ruler_position),
+        )
+        self.add_row("calibration_bar", "", make_check("Calibration bar",
+                                                       cfg.output.calibration_bar),
+                     tooltip=(
+                         "The only printed means of proving the sheet came out at true "
+                         "size. Without it a strip that is silently 0.2 % short looks "
+                         "exactly like a correct one."
+                     ))
+        self.add_row(
+            "calibration_scope", "Calibration on",
+            make_combo(
+                [("Every page", PageScope.EVERY_PAGE), ("First page only", PageScope.FIRST_PAGE)],
+                cfg.output.calibration_scope,
+            ),
+        )
+        self.add_row("page_header_footer", "", make_check("Page header and footer",
+                                                          cfg.output.page_header_footer),
+                     tooltip=(
+                         "Title band above the strip, and the identification band below "
+                         "it carrying the sheet number, absolute X range, revision and "
+                         "fingerprint."
+                     ))
+        self.add_row("instruction_page", "", make_check("Installation guide page",
+                                                        cfg.output.instruction_page))
+        self.add_row("registration_marks", "", make_check("Registration marks",
+                                                          cfg.printing.registration_marks),
+                     section="printing")
+        self.add_row("cut_marks", "", make_check("Cut marks and strip outline",
+                                                 cfg.printing.cut_marks), section="printing")
+        self.add_row("alignment_arrows", "", make_check("Alignment arrows",
+                                                        cfg.printing.alignment_arrows),
+                     section="printing")
+
+    def _on_style_changed(self) -> None:
+        if self._loading:
+            return
+        style = combo_value(self.style_combo)
+        flags = STYLE_FLAGS.get(style)
+        if flags is None:  # Custom selected explicitly - change nothing.
+            return
+        # One commit, so a single undo returns to the previous style rather than
+        # to a half-applied mixture.
+        self._store.update_sections(**flags)
+
+    def load(self, cfg: AopsConfig, derived: DerivedGeometry | None) -> None:
+        super().load(cfg, derived)
+        style = detect_style(cfg)
+        values = getattr(self.style_combo, COMBO_VALUES, [])
+        if style in values:
+            index = values.index(style)
+            if index != self.style_combo.currentIndex():
+                self.style_combo.setCurrentIndex(index)
+        self.style_note.setText(style.description)
+
+        # Options belonging to a switch that is off.
+        self.set_row_enabled("output.hr_position", cfg.output.human_readable)
+        self.set_row_enabled("output.hr_font_pt", cfg.output.human_readable)
+        self.set_row_enabled("output.ruler_position", cfg.output.engineering_ruler)
+        self.set_row_enabled("output.calibration_scope", cfg.output.calibration_bar)
+
+
 class OutputPanel(ConfigPanel):
     section = "output"
 
@@ -277,32 +382,7 @@ class OutputPanel(ConfigPanel):
                         step=100.0, decimals=1),
             suffix="mm",
         )
-        self.add_row("instruction_page", "", make_check("Installation guide page", cfg.output.instruction_page))
-        self.add_row("calibration_bar", "", make_check("Calibration bar", cfg.output.calibration_bar))
-        self.add_row(
-            "calibration_scope", "Calibration on",
-            make_combo(
-                [("Every page", PageScope.EVERY_PAGE), ("First page only", PageScope.FIRST_PAGE)],
-                cfg.output.calibration_scope,
-            ),
-        )
-        self.add_row("engineering_ruler", "", make_check("Engineering ruler", cfg.output.engineering_ruler))
-        self.add_row(
-            "ruler_position", "Ruler position",
-            make_combo([("Below strip", RulerPosition.BELOW), ("Above strip", RulerPosition.ABOVE)],
-                       cfg.output.ruler_position),
-        )
-        self.add_row("human_readable", "", make_check("Human-readable index", cfg.output.human_readable))
-        self.add_row(
-            "hr_position", "Text position",
-            make_combo([("Below symbol", HrPosition.BELOW), ("Above symbol", HrPosition.ABOVE)],
-                       cfg.output.hr_position),
-        )
-        self.add_row(
-            "hr_font_pt", "Text size",
-            make_double(cfg.output.hr_font_pt, minimum=3.0, maximum=24.0, step=0.5, decimals=1),
-            suffix="pt",
-        )
+        self.add_note("Page furniture - rulers, calibration bar, marks - is in Design.")
         self.add_row(
             "verify_mode", "Decode verification",
             make_combo(
@@ -611,6 +691,7 @@ PANEL_SPECS: tuple[tuple[str, str, type[ConfigPanel]], ...] = (
     ("position", "Position parameters", PositionPanel),
     ("payload", "Payload encoding", PayloadPanel),
     ("dimensions", "Strip dimensions", DimensionPanel),
+    ("design", "Design and page furniture", DesignPanel),
     ("output", "Output options", OutputPanel),
     ("paper", "Paper", PaperPanel),
     ("printing", "Print", PrintPanel),

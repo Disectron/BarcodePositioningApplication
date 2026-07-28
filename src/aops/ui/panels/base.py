@@ -161,6 +161,16 @@ class ConfigPanel(QWidget):
     def rows(self) -> dict[str, FieldRow]:
         return dict(self._rows)
 
+    def set_row_enabled(self, path: str, enabled: bool) -> None:
+        """Grey out a row whose controlling switch is off.
+
+        Left live, "Ruler position: below" invites the user to adjust a ruler
+        that is not being printed and then wonder why nothing changed.
+        """
+        row = self._rows.get(path)
+        if row is not None:
+            row.setEnabled(enabled)
+
 
 def _set_editor_value(editor: QWidget, value: Any) -> None:
     """Set an editor's value without triggering user-edit side effects."""

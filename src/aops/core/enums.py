@@ -187,6 +187,59 @@ class PaperPreset(StrEnum):
         return self.value
 
 
+class PrintStyle(StrEnum):
+    """How much page furniture is printed around the symbols.
+
+    The tool's defaults produce a commissioning document: ruler, calibration
+    bar, header, footer, registration and cut marks, all of which exist to make
+    the strip verifiable. That is the right output for a strip going onto a
+    machine, and the wrong output for a design proof or for stock you have
+    already calibrated and only want clean artwork from.
+
+    This is a *view* of the individual furniture switches rather than a stored
+    field of its own. Storing both would let the two disagree; instead the
+    style is derived from the switches by `detect_style`, and selecting one
+    sets them. A configuration that matches no preset simply reads as CUSTOM.
+    """
+
+    PLAIN = "plain"
+    LABELLED = "labelled"
+    ENGINEERING = "engineering"
+    CUSTOM = "custom"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            PrintStyle.PLAIN: "Plain - symbols only",
+            PrintStyle.LABELLED: "Labelled - symbols and numbers",
+            PrintStyle.ENGINEERING: "Engineering - full commissioning set",
+            PrintStyle.CUSTOM: "Custom",
+        }[self]
+
+    @property
+    def description(self) -> str:
+        return {
+            PrintStyle.PLAIN: (
+                "Nothing but the symbols. No ruler, calibration bar, header, footer "
+                "or marks. Use for design proofs and artwork - there is no printed "
+                "means of checking the scale came out right."
+            ),
+            PrintStyle.LABELLED: (
+                "Symbols with their position printed underneath, and nothing else. "
+                "Readable by eye without the surrounding commissioning furniture."
+            ),
+            PrintStyle.ENGINEERING: (
+                "Everything needed to install and verify the strip: calibration bar, "
+                "ruler, absolute X range per sheet, registration and cut marks, and "
+                "the installation guide."
+            ),
+            PrintStyle.CUSTOM: (
+                "The switches below do not match any preset. Pick a style to reset "
+                "them, or carry on - nothing is wrong with a custom combination."
+            ),
+        }[self]
+
+
 class Orientation(StrEnum):
     PORTRAIT = "portrait"
     LANDSCAPE = "landscape"

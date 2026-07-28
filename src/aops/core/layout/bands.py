@@ -38,12 +38,21 @@ class BandLayout:
 
 
 def solve_bands(cfg: AopsConfig, *, with_calibration: bool) -> BandLayout:
-    """Stack the page bands top to bottom."""
+    """Stack the page bands top to bottom.
+
+    With the header and footer suppressed their bands are removed rather than
+    merely left blank, so a plain print is as short as its content - which is
+    what lets it fit media that the full commissioning layout would not.
+    """
+    furniture = cfg.output.page_header_footer
     y = 0.0
 
-    y += HEADER_H_MM
-    header_baseline = y - 2.4
-    y += GAP_MM
+    if furniture:
+        y += HEADER_H_MM
+        header_baseline = y - 2.4
+        y += GAP_MM
+    else:
+        header_baseline = 0.0
 
     ruler_y: float | None = None
     if cfg.output.engineering_ruler and cfg.output.ruler_position is RulerPosition.ABOVE:
@@ -63,8 +72,12 @@ def solve_bands(cfg: AopsConfig, *, with_calibration: bool) -> BandLayout:
         calibration_y = y
         y += CALIBRATION_H_MM + GAP_MM
 
-    footer_baseline = y + FOOTER_H_MM - 2.0
-    y += FOOTER_H_MM
+    if furniture:
+        footer_baseline = y + FOOTER_H_MM - 2.0
+        y += FOOTER_H_MM
+    else:
+        # Trailing GAP_MM from the last band above is the whole bottom margin.
+        footer_baseline = y
 
     return BandLayout(
         header_baseline_mm=header_baseline,

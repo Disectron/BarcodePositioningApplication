@@ -85,6 +85,24 @@ class ConfigStore(QObject):
             return
         self._commit(dataclasses.replace(self._config, **{section: updated}))
 
+    def update_sections(self, **sections: dict[str, Any]) -> None:
+        """Replace fields across several sections as a single undoable edit.
+
+        Applying a print style touches both `output` and `printing`. Doing that
+        as two `update_section` calls would put two entries on the undo stack,
+        so one Ctrl+Z would leave the configuration in a state that matches no
+        style at all.
+        """
+        updated = self._config
+        for name, changes in sections.items():
+            current = getattr(updated, name)
+            updated = dataclasses.replace(
+                updated, **{name: dataclasses.replace(current, **changes)}
+            )
+        if updated == self._config:
+            return
+        self._commit(updated)
+
     def set_config(self, config: AopsConfig, *, mark_clean: bool = False) -> None:
         """Replace the whole configuration (project open, or New)."""
         self._undo.append(self._config)

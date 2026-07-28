@@ -70,24 +70,28 @@ def compose_strip_page(
     items: list[Primitive] = []
     total_pages = len(derived.pages)
 
-    items += header_elements(
-        f"SHEET {page.strip_page_number}/{total_pages}",
-        cfg,
-        content_w,
-        bands.header_baseline_mm,
-        measurer=measurer,
-    )
+    if cfg.output.page_header_footer:
+        items += header_elements(
+            f"SHEET {page.strip_page_number}/{total_pages}",
+            cfg,
+            content_w,
+            bands.header_baseline_mm,
+            measurer=measurer,
+        )
 
     # Faint outline of the strip band, so the installer can see what to cut to.
-    items.append(
-        Rect(
-            0.0,
-            bands.strip_top_mm,
-            um_to_mm(page.content_length_um),
-            bands.strip_height_mm,
-            S.STRIP_OUTLINE,
+    # It is the same cut guide the cut marks are, so it follows the same switch:
+    # a print with nothing to cut should carry no cutting ink.
+    if cfg.printing.cut_marks:
+        items.append(
+            Rect(
+                0.0,
+                bands.strip_top_mm,
+                um_to_mm(page.content_length_um),
+                bands.strip_height_mm,
+                S.STRIP_OUTLINE,
+            )
         )
-    )
 
     items += strip_cells(
         page, derived.cell, matrices, _payload_map(cfg, derived), cfg,
@@ -113,10 +117,13 @@ def compose_strip_page(
         0.0, um_to_mm(page.content_length_um), bands.strip_top_mm - 2.0, cfg.printing
     )
 
-    left, right = page_footer_text(
-        page, total_pages, cfg, fingerprint, _page_position_range(page, cfg, derived)
-    )
-    items += footer_elements(left, right, content_w, bands.footer_baseline_mm, measurer=measurer)
+    if cfg.output.page_header_footer:
+        left, right = page_footer_text(
+            page, total_pages, cfg, fingerprint, _page_position_range(page, cfg, derived)
+        )
+        items += footer_elements(
+            left, right, content_w, bands.footer_baseline_mm, measurer=measurer
+        )
 
     sheet_items = registration_marks(sheet_w, sheet_h, cfg.printing)
 
@@ -150,9 +157,13 @@ def compose_continuous(
     bands = solve_bands(cfg, with_calibration=cfg.output.calibration_bar)
     items: list[Primitive] = []
 
-    items.append(
-        Rect(0.0, bands.strip_top_mm, spec.roll_length_mm, bands.strip_height_mm, S.STRIP_OUTLINE)
-    )
+    if cfg.printing.cut_marks:
+        items.append(
+            Rect(
+                0.0, bands.strip_top_mm, spec.roll_length_mm, bands.strip_height_mm,
+                S.STRIP_OUTLINE,
+            )
+        )
 
     payloads = _payload_map(cfg, derived)
     cell = derived.cell
@@ -186,16 +197,19 @@ def compose_continuous(
     if cfg.output.calibration_bar and bands.calibration_y_mm is not None:
         items += calibration_elements(0.0, bands.calibration_y_mm, cfg.printing, measurer=measurer)
 
-    label = f"ROLL {roll_index + 1}/{spec.roll_count}" if spec.roll_count > 1 else "CONTINUOUS"
-    items += header_elements(label, cfg, spec.roll_length_mm, bands.header_baseline_mm,
-                             measurer=measurer)
-    items += footer_elements(
-        f"{label}   X {x0_mm:.1f}-{x1_mm:.1f} mm   {derived.code_count} CODES",
-        f"REV {cfg.project.revision or '-'}   {fingerprint}",
-        spec.roll_length_mm,
-        bands.footer_baseline_mm,
-        measurer=measurer,
-    )
+    if cfg.output.page_header_footer:
+        label = (
+            f"ROLL {roll_index + 1}/{spec.roll_count}" if spec.roll_count > 1 else "CONTINUOUS"
+        )
+        items += header_elements(label, cfg, spec.roll_length_mm, bands.header_baseline_mm,
+                                 measurer=measurer)
+        items += footer_elements(
+            f"{label}   X {x0_mm:.1f}-{x1_mm:.1f} mm   {derived.code_count} CODES",
+            f"REV {cfg.project.revision or '-'}   {fingerprint}",
+            spec.roll_length_mm,
+            bands.footer_baseline_mm,
+            measurer=measurer,
+        )
 
     height = max(bands.total_height_mm, spec.height_mm)
     return PageDrawLists(

@@ -24,12 +24,14 @@ from collections.abc import Iterable
 
 from aops.core.cell import GENEROUS_MODULE_UM, MIN_MODULE_UM, resolve_cell
 from aops.core.config import AopsConfig
+from aops.core.design import detect_style
 from aops.core.enums import (
     ContinuousStrategy,
     LrMarginMode,
     Media,
     PitchMode,
     PrintMethod,
+    PrintStyle,
     Ribbon,
     Severity,
     SpliceMode,
@@ -485,6 +487,38 @@ def pag_roll_media(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable
                  "calibration bar, or reduce the margins.")
 
 
+def pag_print_style(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """What a plain print gives up.
+
+    Not an error - artwork and design proofs are a legitimate output, and the
+    tool should not refuse to make one. But the calibration bar is the *only*
+    printed means of proving the sheet came out 1:1, and a positioning strip
+    that is silently 0.2 % short is worse than one that obviously failed. So
+    the trade is stated rather than assumed.
+    """
+    style = detect_style(cfg)
+    if style is PrintStyle.ENGINEERING:
+        return
+
+    if not cfg.output.calibration_bar:
+        yield _f("PAG-011", Severity.WARNING,
+                 f"'{style.display_name}' prints no calibration bar, so there is no way "
+                 f"to check on paper that the strip came out at true size.",
+                 "output.calibration_bar",
+                 "Fine for artwork and proofs. Turn the calibration bar back on - or "
+                 "choose the Engineering style - before printing a strip that will go "
+                 "on a machine.")
+
+    if not cfg.output.page_header_footer and derived is not None and len(derived.pages) > 1:
+        yield _f("PAG-012", Severity.WARNING,
+                 f"With no header or footer, the {len(derived.pages)} sheets carry no "
+                 f"page number, absolute X range or fingerprint, so they cannot be told "
+                 f"apart or matched to this project once printed.",
+                 "output.page_header_footer",
+                 "Turn the header and footer on for multi-sheet output, or export "
+                 "continuously so there is only one piece.")
+
+
 def con_selected(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     if not cfg.output.tiled_pages and not cfg.output.continuous:
         yield _f("CON-004", Severity.WARNING,
@@ -817,6 +851,7 @@ ALL_RULES: tuple[Rule, ...] = (
     pag_margins,
     pag_leading,
     pag_roll_media,
+    pag_print_style,
     con_selected,
     con_limits,
     prn_scaling,

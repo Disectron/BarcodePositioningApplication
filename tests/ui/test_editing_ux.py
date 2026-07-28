@@ -210,3 +210,68 @@ def test_no_match_hides_everything(app):
 
     panel = DimensionPanel(ConfigStore())
     assert panel.apply_filter("zzzznotafield") == 0
+
+
+# -- the Design panel -------------------------------------------------------
+
+
+def _design_panel():
+    from aops.controller.config_store import ConfigStore
+    from aops.ui.panels.sections import DesignPanel
+
+    store = ConfigStore()
+    return DesignPanel(store), store
+
+
+def test_style_combo_reflects_the_switches(app):
+    from aops.core.design import apply_style
+    from aops.core.enums import PrintStyle
+    from aops.ui.widgets.field_row import combo_value
+
+    panel, store = _design_panel()
+    store.set_config(apply_style(store.config, PrintStyle.PLAIN))
+    panel.refresh(store.config, None)
+    assert combo_value(panel.style_combo) is PrintStyle.PLAIN
+
+
+def test_touching_a_switch_shows_custom(app):
+    from aops.core.enums import PrintStyle
+    from aops.ui.widgets.field_row import combo_value
+
+    panel, store = _design_panel()
+    store.update_section("output", calibration_bar=False)
+    panel.refresh(store.config, None)
+    assert combo_value(panel.style_combo) is PrintStyle.CUSTOM
+
+
+def test_selecting_a_style_is_one_undo_step(app):
+    """Applying a style touches output.* and printing.* - but as one commit."""
+    from aops.core.design import detect_style
+    from aops.core.enums import PrintStyle
+
+    panel, store = _design_panel()
+    before = store.config
+    panel.style_combo.setCurrentIndex(list(PrintStyle).index(PrintStyle.PLAIN))
+    assert detect_style(store.config) is PrintStyle.PLAIN
+    store.undo()
+    assert store.config == before
+
+
+def test_dependent_rows_grey_out_when_their_switch_is_off(app):
+    panel, store = _design_panel()
+    store.update_section("output", human_readable=False, engineering_ruler=False,
+                         calibration_bar=False)
+    panel.refresh(store.config, None)
+    rows = panel.rows()
+    assert not rows["output.hr_position"].isEnabled()
+    assert not rows["output.ruler_position"].isEnabled()
+    assert not rows["output.calibration_scope"].isEnabled()
+
+
+def test_dependent_rows_come_back_when_their_switch_returns(app):
+    panel, store = _design_panel()
+    store.update_section("output", human_readable=False)
+    panel.refresh(store.config, None)
+    store.update_section("output", human_readable=True)
+    panel.refresh(store.config, None)
+    assert panel.rows()["output.hr_position"].isEnabled()

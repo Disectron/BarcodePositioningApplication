@@ -116,6 +116,9 @@ class OutputConfig:
     instruction_page: bool = True
     calibration_bar: bool = True
     calibration_scope: PageScope = PageScope.EVERY_PAGE
+    #: Title band above the strip and the identification band below it. Off for
+    #: a plain artwork print; on whenever the sheet has to be traceable.
+    page_header_footer: bool = True
     engineering_ruler: bool = True
     ruler_position: RulerPosition = RulerPosition.BELOW
     human_readable: bool = True

@@ -178,6 +178,28 @@ margin on cutting accuracy. `verify_splices()` re-derives the property *independ
 placed geometry, and runs both in the test suite and again at export time, so a packer bug cannot
 silently ship a strip with a symbol cut in half.
 
+### Print styles
+
+The defaults produce a *commissioning document* — ruler, calibration bar, header, footer,
+registration and cut marks — all of which exist to make the strip verifiable. That is right for a
+strip going onto a machine and wrong for a design proof. The **Design** section picks between:
+
+| Style | What prints | Band stack |
+|---|---|---|
+| **Plain** | Symbols and nothing else | 43 mm |
+| **Labelled** | Symbols with their position underneath | 43 mm |
+| **Engineering** (default) | Everything, plus the installation guide | 92 mm |
+
+The style is **derived from the individual switches, never stored alongside them** — storing both
+would let them disagree, and the disagreement would be invisible (a combo reading "Plain" over a
+sheet that prints a calibration bar). Selecting a style writes the switches; changing one by hand
+reads as `Custom`. Old project files need no migration: they read as whatever style their switches
+already describe.
+
+Plain warns rather than refuses (`PAG-011`). The calibration bar is the only printed means of
+proving the sheet came out 1:1, and a positioning strip that is silently 0.2 % short looks exactly
+like a correct one — so the trade is stated, not assumed.
+
 ### …or avoid splices altogether, with a label printer
 
 A thermal-transfer label printer running continuous polyester with a resin ribbon is arguably the

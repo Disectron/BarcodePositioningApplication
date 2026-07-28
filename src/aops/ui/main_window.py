@@ -256,8 +256,14 @@ class MainWindow(QMainWindow):
         for panel in self._panels.values():
             panel.apply_validation(report)
 
+        # Badge a header from the fields its own panel actually shows, not from
+        # the config section it is named after. Design edits output.* and
+        # printing.* fields, so keying on the name would badge "Output options"
+        # for a warning whose control sits in "Design".
         for key, section in self._accordion.sections().items():
-            findings = report.for_section(key)
+            panel = self._panels.get(key)
+            paths = set(panel.rows()) if panel is not None else set()
+            findings = [f for f in report.findings if f.field in paths]
             worst = max((f.severity for f in findings), default=None)
             section.set_severity(worst, len(findings))
 

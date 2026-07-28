@@ -56,8 +56,13 @@ def pump(app, window) -> None:
 
 
 def test_window_constructs_with_all_sections(window):
+    from aops.ui.panels.sections import PANEL_SPECS
+
     assert window._accordion.sections()
-    assert len(window._panels) == 10
+    # Tied to the registry rather than a literal, so adding a section does not
+    # need this number edited to stay honest.
+    assert len(window._panels) == len(PANEL_SPECS)
+    assert set(window._panels) == {key for key, _title, _cls in PANEL_SPECS}
     assert window._pill.text()
 
 
