@@ -279,6 +279,93 @@ class Media(StrEnum):
             Media.VINYL: 0.0050,
         }[self]
 
+    @property
+    def cte_ppm_per_c(self) -> float:
+        """Linear coefficient of thermal expansion, in ppm per degree Celsius.
+
+        Published ranges for the film bases in question: BoPET/polyester
+        15-20, polypropylene-based synthetic stock 60-80, plasticised PVC
+        50-80. The midpoint of each is used.
+
+        For polyester this term is the *larger* of the two substrate effects on
+        a long strip: 17 ppm over a 30 C swing is 0.051 %, against 0.004 % for
+        a 40-point humidity swing. Temperature is not the second-order effect
+        it is often assumed to be.
+        """
+        return {
+            Media.PAPER: 15.0,
+            Media.SYNTHETIC: 70.0,
+            Media.POLYESTER: 17.0,
+            Media.VINYL: 70.0,
+        }[self]
+
+
+class FrameMaterial(StrEnum):
+    """What the strip is mounted to.
+
+    Only the *difference* between the substrate's expansion and the frame's
+    reaches the position reading, so the frame is as much a part of the error
+    budget as the tape. An aluminium extrusion at 23 ppm expands faster than
+    polyester at 17; structural steel at 12 expands slower. The sign of the
+    error flips between the two.
+    """
+
+    STEEL = "steel"
+    STAINLESS = "stainless"
+    ALUMINIUM = "aluminium"
+    CAST_IRON = "cast_iron"
+    GRANITE = "granite"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            FrameMaterial.STEEL: "Mild / structural steel",
+            FrameMaterial.STAINLESS: "Stainless steel (304)",
+            FrameMaterial.ALUMINIUM: "Aluminium",
+            FrameMaterial.CAST_IRON: "Cast iron",
+            FrameMaterial.GRANITE: "Granite",
+        }[self]
+
+    @property
+    def cte_ppm_per_c(self) -> float:
+        """Linear coefficient of thermal expansion, in ppm per degree Celsius."""
+        return {
+            FrameMaterial.STEEL: 12.0,
+            FrameMaterial.STAINLESS: 17.0,
+            FrameMaterial.ALUMINIUM: 23.0,
+            FrameMaterial.CAST_IRON: 11.0,
+            FrameMaterial.GRANITE: 6.0,
+        }[self]
+
+
+class TapeMounting(StrEnum):
+    """How the strip is fixed along its length.
+
+    This decides whether thermal expansion reaches the position reading at all,
+    and it is the single most consequential mounting choice.
+
+    CONTINUOUS_BOND
+        Bonded along its whole length. The adhesive forces the tape to follow
+        the frame, so a code stays over the machine feature it was aligned to
+        and the thermal term very largely cancels. The strain does not vanish -
+        it is carried by the adhesive - so a large CTE mismatch becomes a bond
+        durability problem instead of a position error.
+    END_ANCHORED
+        Fixed at one end (or in a channel) and free to move elsewhere, which is
+        the conventional way to mount a long tape. The tape now expands at its
+        own rate and the full differential reaches the reading.
+    """
+
+    CONTINUOUS_BOND = "continuous_bond"
+    END_ANCHORED = "end_anchored"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            TapeMounting.CONTINUOUS_BOND: "Bonded along full length",
+            TapeMounting.END_ANCHORED: "Anchored at one end",
+        }[self]
+
 
 class Severity(IntEnum):
     """Validation severity. Ordered, so `max()` finds the worst finding."""

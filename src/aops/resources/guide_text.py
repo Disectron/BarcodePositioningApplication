@@ -101,6 +101,12 @@ def media_notes(cfg: AopsConfig, derived: DerivedGeometry) -> tuple[str, ...]:
         f"Predicted substrate movement: {acc.media_drift_mm:.2f} mm over "
         f"{acc.strip_length_mm / 1000:.3f} m across a "
         f"{cfg.media.rh_swing_percent:.0f} % humidity swing.",
+        f"Thermal movement reaching the reading: {acc.thermal_drift_mm:.2f} mm across a "
+        f"{cfg.media.temp_swing_deg_c:.0f} C swing, mounted "
+        f"{cfg.media.mounting.display_name.lower()} on "
+        f"{cfg.media.frame_material.display_name.lower()} "
+        f"({cfg.media.cte_mismatch_ppm_per_c:+.0f} ppm/C mismatch). Unconstrained, the "
+        f"substrate alone would move {acc.thermal_free_mm:.2f} mm.",
         f"One symbol module spans {acc.module_dots:.1f} printer dots at "
         f"{cfg.printer.dpi} dpi (dot size {acc.dot_size_mm:.4f} mm). "
         f"At least 3 dots per module is required; 5 or more is preferred.",

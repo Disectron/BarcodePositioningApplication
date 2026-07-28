@@ -39,6 +39,8 @@ KNOWN_SUFFIXES = (
     "_dpi",
     "_pct_per_rh",
     "_per_module",
+    "_deg_c",
+    "_ppm_per_c",
 )
 
 

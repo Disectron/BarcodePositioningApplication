@@ -69,6 +69,13 @@ def cmd_info(args: argparse.Namespace) -> int:
           f"({cfg.scanner.min_codes_in_view} code(s) in view)")
     print(f"  splice error    {derived.accuracy.cumulative_error_mm:.1f} mm cumulative vs "
           f"{derived.accuracy.bounded_error_mm:.2f} mm datum-aligned")
+    acc = derived.accuracy
+    thermal = (
+        f"cancelled by bonding ({acc.bond_strain_ppm:.0f} ppm bond strain)"
+        if acc.thermal_drift_mm <= 0.0
+        else f"{acc.thermal_drift_mm:.2f} mm"
+    )
+    print(f"  environment     {acc.media_drift_mm:.2f} mm humidity, thermal {thermal}")
     print("validation:")
     _report(cfg, derived, verbose=args.verbose)
     return 0

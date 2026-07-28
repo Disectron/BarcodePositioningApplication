@@ -9,6 +9,7 @@ from aops.core.enums import (
     ContinuousStrategy,
     Datum,
     Direction,
+    FrameMaterial,
     HrPosition,
     LrMarginMode,
     Media,
@@ -22,6 +23,7 @@ from aops.core.enums import (
     RulerPosition,
     SpliceMode,
     Symbology,
+    TapeMounting,
     VerifyMode,
 )
 from aops.core.stats import DerivedGeometry
@@ -444,6 +446,41 @@ class MediaPanel(ConfigPanel):
             make_double(cfg.media.dim_stability_pct_per_rh, minimum=0.0, maximum=1.0,
                         step=0.001, decimals=4),
             suffix="%/%RH",
+            tooltip="0 uses the published figure for the selected substrate.",
+        )
+        self.add_row(
+            "temp_swing_deg_c", "Temperature swing",
+            make_double(cfg.media.temp_swing_deg_c, minimum=0.0, maximum=200.0, step=5.0, decimals=0),
+            suffix="C",
+            tooltip=(
+                "Expected in-service temperature range. On polyester this moves the "
+                "strip about twelve times further than humidity does."
+            ),
+        )
+        self.add_row(
+            "frame_material", "Mounted on",
+            make_combo([(m.display_name, m) for m in FrameMaterial], cfg.media.frame_material),
+            tooltip=(
+                "Only the difference between substrate and frame expansion reaches the "
+                "reading. Aluminium expands faster than polyester, steel slower, so the "
+                "error changes sign between them."
+            ),
+        )
+        self.add_row(
+            "mounting", "Mounting",
+            make_combo([(m.display_name, m) for m in TapeMounting], cfg.media.mounting),
+            tooltip=(
+                "Bonded along its full length, the strip follows the frame and thermal "
+                "error largely cancels - the strain goes into the adhesive instead. "
+                "Anchored at one end, it expands freely and the full difference reaches "
+                "the reading."
+            ),
+        )
+        self.add_row(
+            "cte_ppm_per_c", "Expansion override",
+            make_double(cfg.media.cte_ppm_per_c, minimum=0.0, maximum=500.0,
+                        step=1.0, decimals=1),
+            suffix="ppm/C",
             tooltip="0 uses the published figure for the selected substrate.",
         )
         self.add_row("dpi", "Printer resolution",

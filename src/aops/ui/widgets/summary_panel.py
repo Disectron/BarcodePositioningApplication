@@ -68,7 +68,8 @@ class ParameterSummary(QWidget):
         self.accuracy = SummaryGroup("Print accuracy")
         for key, label in (
             ("dots", "Module in dots"),
-            ("drift", "Media drift"),
+            ("drift", "Humidity drift"),
+            ("thermal", "Thermal drift"),
             ("cumulative", "Butt-splice error"),
             ("bounded", "Datum-aligned error"),
         ):
@@ -125,6 +126,20 @@ class ParameterSummary(QWidget):
         self.accuracy.set("dots", f"{acc.module_dots:.1f} dots @ {cfg.printer.dpi} dpi", dots_colour)
         drift_colour = OK if acc.media_drift_mm < c.pitch_mm / 4 else WARNING
         self.accuracy.set("drift", f"{acc.media_drift_mm:.2f} mm over strip", drift_colour)
+        if acc.thermal_drift_mm <= 0.0:
+            # Bonded: the differential is carried by the adhesive, not the reading.
+            self.accuracy.set(
+                "thermal", f"cancelled by bonding ({acc.bond_strain_ppm:.0f} ppm strain)", OK
+            )
+        else:
+            thermal_colour = (
+                ERROR
+                if acc.thermal_drift_mm > c.pitch_mm / 2
+                else (WARNING if acc.thermal_drift_mm > 1.0 else OK)
+            )
+            self.accuracy.set(
+                "thermal", f"{acc.thermal_drift_mm:.2f} mm over strip", thermal_colour
+            )
         self.accuracy.set(
             "cumulative",
             f"{acc.cumulative_error_mm:.1f} mm accumulated",

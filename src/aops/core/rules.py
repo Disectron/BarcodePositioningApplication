@@ -592,6 +592,66 @@ def med_drift(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Find
                  "media.media", "Choose a more stable substrate or control the environment.")
 
 
+def med_thermal(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """Temperature, which on polyester outweighs humidity by an order of magnitude."""
+    if derived is None:
+        return
+    acc = derived.accuracy
+    m = cfg.media
+
+    if m.temp_swing_deg_c <= 0.0:
+        yield _f("MED-006", Severity.INFO,
+                 "Temperature swing is zero, so no thermal error is modelled. Set the "
+                 "expected in-service range to include it in the budget.",
+                 "media.temp_swing_deg_c")
+        return
+
+    if acc.thermal_drift_mm > derived.cell.pitch_mm / 2:
+        yield _f("MED-006", Severity.ERROR,
+                 f"Thermal expansion moves the strip {acc.thermal_drift_mm:.2f} mm over its "
+                 f"length across a {m.temp_swing_deg_c:.0f} C swing - more than half a pitch, so "
+                 f"the reader can land on the wrong code.",
+                 "media.temp_swing_deg_c",
+                 "Bond the strip along its full length, match the substrate to the frame, "
+                 "or control the temperature.")
+    elif acc.thermal_drift_mm > 1.0:
+        yield _f("MED-006", Severity.WARNING,
+                 f"Thermal expansion moves the strip {acc.thermal_drift_mm:.2f} mm over its "
+                 f"length across a {m.temp_swing_deg_c:.0f} C swing "
+                 f"({m.cte_mismatch_ppm_per_c:+.0f} ppm/C against "
+                 f"{m.frame_material.display_name.lower()}).",
+                 "media.mounting",
+                 "Bonding along the full length makes the strip follow the frame and largely "
+                 "cancels this.")
+
+    # Worth saying out loud: the tool has always reported humidity prominently,
+    # and for the substrate this application actually uses it is the smaller term.
+    if acc.thermal_dominates and acc.thermal_drift_mm > 0.1:
+        yield _f("MED-007", Severity.INFO,
+                 f"Temperature moves this strip further than humidity does "
+                 f"({acc.thermal_drift_mm:.2f} mm against {acc.media_drift_mm:.2f} mm). "
+                 f"Substrate choice alone will not fix it.",
+                 "media.temp_swing_deg_c")
+
+
+def med_bond_stress(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """A bonded tape trades a position error for a shear load on the adhesive."""
+    if derived is None:
+        return
+    strain = derived.accuracy.bond_strain_ppm
+    if strain <= 0.0:
+        return
+    if strain > 400.0:
+        yield _f("MED-008", Severity.WARNING,
+                 f"Bonding {cfg.media.media.display_name.lower()} to "
+                 f"{cfg.media.frame_material.display_name.lower()} forces the adhesive to "
+                 f"carry {strain:.0f} ppm of strain over a {cfg.media.temp_swing_deg_c:.0f} C "
+                 f"swing. Thermal error is cancelled at the cost of long-term bond stress.",
+                 "media.frame_material",
+                 "Use a permanent acrylic adhesive rated for the range, or match the "
+                 "substrate more closely to the frame.")
+
+
 def med_process(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     m = cfg.media
     if m.method is PrintMethod.LASER and m.media in (Media.POLYESTER, Media.VINYL):
@@ -702,6 +762,8 @@ ALL_RULES: tuple[Rule, ...] = (
     prn_splice_error,
     med_paper,
     med_drift,
+    med_thermal,
+    med_bond_stress,
     med_process,
     scn_fov,
     scn_sensor,

@@ -12,8 +12,9 @@ with four separate payoffs:
    (`controller.config_store.ConfigStore`) and is passed down explicitly.
 
 Unit convention: every ``float`` field carries a unit suffix (``_mm``, ``_pt``,
-``_percent``, ``_deg``). This is enforced by a test, not by convention alone -
-see ``tests/core/test_config_units.py``.
+``_percent``, ``_deg``, ``_deg_c``). This is enforced by a test, not by
+convention alone - see ``test_every_float_field_carries_a_unit_suffix`` in
+``tests/core/test_config_and_rules.py``.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from aops.core.enums import (
     ContinuousStrategy,
     Datum,
     Direction,
+    FrameMaterial,
     HrPosition,
     LrMarginMode,
     Media,
@@ -38,6 +40,7 @@ from aops.core.enums import (
     RulerPosition,
     SpliceMode,
     Symbology,
+    TapeMounting,
     VerifyMode,
 )
 
@@ -184,11 +187,16 @@ class PrintConfig:
 
 @dataclass(frozen=True, slots=True)
 class MediaConfig:
-    """Substrate and process. Dominates 1:1 accuracy and service life.
+    """Substrate, process and mounting. Dominates 1:1 accuracy and service life.
 
-    ``dim_stability_pct_per_rh`` defaults to 0.0 meaning "take the published
-    figure for the selected media"; a non-zero value overrides it with a
-    measured one from the media datasheet.
+    ``dim_stability_pct_per_rh`` and ``cte_ppm_per_c`` default to 0.0 meaning
+    "take the published figure for the selected media"; a non-zero value
+    overrides it with a measured one from the media datasheet.
+
+    ``frame_material`` and ``mounting`` are properties of the *machine*, not of
+    the media, but they live here because they are inseparable from the media
+    question: only the difference between substrate and frame expansion reaches
+    the position reading, and the mounting decides whether it reaches it at all.
     """
 
     media: Media = Media.POLYESTER
@@ -197,6 +205,10 @@ class MediaConfig:
     adhesive_backed: bool = True
     rh_swing_percent: float = 40.0
     dim_stability_pct_per_rh: float = 0.0
+    temp_swing_deg_c: float = 30.0
+    frame_material: FrameMaterial = FrameMaterial.STEEL
+    mounting: TapeMounting = TapeMounting.CONTINUOUS_BOND
+    cte_ppm_per_c: float = 0.0
 
     @property
     def effective_stability_pct_per_rh(self) -> float:
@@ -204,6 +216,18 @@ class MediaConfig:
         if self.dim_stability_pct_per_rh > 0.0:
             return self.dim_stability_pct_per_rh
         return self.media.dim_stability_pct_per_rh
+
+    @property
+    def effective_cte_ppm_per_c(self) -> float:
+        """User override if set, otherwise the published figure for the media."""
+        if self.cte_ppm_per_c > 0.0:
+            return self.cte_ppm_per_c
+        return self.media.cte_ppm_per_c
+
+    @property
+    def cte_mismatch_ppm_per_c(self) -> float:
+        """Substrate CTE minus frame CTE. Signed: positive means the tape grows faster."""
+        return self.effective_cte_ppm_per_c - self.frame_material.cte_ppm_per_c
 
 
 @dataclass(frozen=True, slots=True)

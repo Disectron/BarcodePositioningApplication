@@ -136,6 +136,34 @@ Parameter summary so the reason is self-evident.
 Paper is a hard validation error for any strip over a metre (`MED-001`), quoting the predicted drift
 in millimetres.
 
+### …but on the substrate you actually use, temperature beats humidity
+
+Once paper is ruled out, humidity stops being the dominant term and almost everyone keeps optimising
+it anyway. Polyester moves 0.004 % over a 40-point humidity swing and 0.051 % over a 30 °C one —
+**twelve times more**. Over the default 10.565 m strip:
+
+| Term | Movement | Modelled by |
+|---|---|---|
+| Humidity, 40 %RH | 0.42 mm | `media_drift_mm` |
+| Datum-aligned print error | 0.54 mm | `bounded_error_mm` |
+| **Thermal, 30 °C, polyester on steel** | **1.58 mm** | `thermal_drift_mm` |
+| Thermal, same strip referenced to granite | 3.49 mm | `thermal_differential_mm` |
+
+Two things make this more than a bigger number.
+
+**Only the difference against the frame reaches the reading.** Polyester (17 ppm/°C) on steel
+(12 ppm/°C) leaves 5 ppm; on aluminium (23 ppm/°C) it leaves −6 ppm and **the error changes sign**.
+Compensating in the wrong direction doubles it, so `thermal_differential_mm` is reported signed.
+
+**The mounting decides whether it reaches the reading at all.** A continuously bonded strip is
+dragged along by the frame, so a code stays over the feature it was aligned to and the term very
+largely cancels — against features on *that same frame*. The strain does not vanish; the adhesive
+carries it, which is reported as `bond_strain_ppm` and warned about at `MED-008`. An end-anchored
+strip expands freely and takes the whole differential (`MED-006`).
+
+So the answer to "how accurate is my strip" depends on a question the tool previously never asked:
+what is it stuck to, and how.
+
 ### Splice safety is proved, not hoped for
 
 Page boundaries only ever fall in the white gap between symbols. The packer treats a cell as

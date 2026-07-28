@@ -12,7 +12,26 @@ control unless the software asks about them.
    software setting, which is why `MediaConfig` exists and why paper on a long
    strip is a hard validation error.
 
-2. CUMULATIVE vs BOUNDED SPLICE ERROR
+2. TEMPERATURE, WHICH USUALLY OUTWEIGHS HUMIDITY
+   For the substrate a positioning strip actually uses, this is the larger of
+   the two environmental terms, which is the opposite of the common assumption.
+   Polyester moves 0.004 % over a 40-point humidity swing but 0.051 % over a
+   30 C one - twelve times more. On a 10.5 m strip that is 0.42 mm against
+   5.4 mm of free expansion.
+
+   Only the *difference* between substrate and frame reaches the reading, so
+   the frame is part of the error budget: polyester (17 ppm) on steel (12 ppm)
+   leaves 5 ppm, but on aluminium (23 ppm) it leaves -6 ppm, and the error
+   changes sign.
+
+   The mounting then decides whether that difference reaches the reading at
+   all. A continuously bonded tape is forced to follow the frame, so a code
+   stays over the feature it was aligned to and the term very largely cancels -
+   the strain is carried by the adhesive instead, which turns a position
+   problem into a bond-durability one. An end-anchored tape expands freely and
+   takes the full differential.
+
+3. CUMULATIVE vs BOUNDED SPLICE ERROR
    This is the insight that changes how the strip is installed.
 
    If tiles are **butt-spliced** - each one aligned against the previous - a
@@ -33,7 +52,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from aops.core.config import MediaConfig, PrinterConfig
-from aops.core.enums import Media, PrintMethod, Ribbon
+from aops.core.enums import Media, PrintMethod, Ribbon, TapeMounting
 from aops.core.units import MM_PER_INCH
 
 
@@ -44,6 +63,18 @@ class AccuracyReport:
     strip_length_mm: float
     #: Movement of the substrate over the full strip for the expected RH swing.
     media_drift_mm: float
+    #: Positioning error from thermal expansion, after the mounting is taken
+    #: into account. Near zero for a continuously bonded tape.
+    thermal_drift_mm: float
+    #: Substrate-vs-frame differential over the strip, before mounting. Signed:
+    #: positive means the tape grows faster than what it is stuck to.
+    thermal_differential_mm: float
+    #: Free expansion of the substrate alone, ignoring the frame entirely. The
+    #: figure that applies when position is referenced to something that does
+    #: not share the frame's temperature.
+    thermal_free_mm: float
+    #: Strain the adhesive must carry when the tape is bonded, in ppm.
+    bond_strain_ppm: float
     #: Residual scale error after calibration, as a fraction (0.002 = 0.2 %).
     residual_scale_error: float
     #: Worst-case drift if tiles are butt-spliced end to end.
@@ -60,11 +91,59 @@ class AccuracyReport:
         """True when butt-splicing would exceed a millimetre of drift."""
         return self.cumulative_error_mm > 1.0
 
+    @property
+    def environmental_drift_mm(self) -> float:
+        """Combined humidity and temperature movement reaching the reading.
+
+        Added in quadrature rather than summed: the two swings are independent,
+        and a worst-case sum would overstate the realistic error.
+        """
+        return (self.media_drift_mm**2 + self.thermal_drift_mm**2) ** 0.5
+
+    @property
+    def thermal_dominates(self) -> bool:
+        """True when temperature moves the strip further than humidity does."""
+        return abs(self.thermal_drift_mm) > self.media_drift_mm
+
 
 def media_drift_mm(media: MediaConfig, strip_length_mm: float) -> float:
     """Substrate movement over `strip_length_mm` for the expected humidity swing."""
     pct = media.effective_stability_pct_per_rh * media.rh_swing_percent
     return strip_length_mm * pct / 100.0
+
+
+def thermal_free_mm(media: MediaConfig, strip_length_mm: float) -> float:
+    """Unconstrained expansion of the substrate itself over the strip."""
+    return strip_length_mm * media.effective_cte_ppm_per_c * 1e-6 * media.temp_swing_deg_c
+
+
+def thermal_differential_mm(media: MediaConfig, strip_length_mm: float) -> float:
+    """Substrate-vs-frame differential expansion over the strip.
+
+    Signed: positive means the tape grows faster than the frame it is on.
+    """
+    return strip_length_mm * media.cte_mismatch_ppm_per_c * 1e-6 * media.temp_swing_deg_c
+
+
+def thermal_drift_mm(media: MediaConfig, strip_length_mm: float) -> float:
+    """Thermal error that actually reaches the position reading.
+
+    A continuously bonded tape is dragged along by the frame, so a code stays
+    over the machine feature it was aligned to and the differential does not
+    reach the reading. That cancellation is only valid against features on the
+    *same* frame; `thermal_free_mm` is the figure to use when position is
+    referenced to something that does not share the frame's temperature.
+    """
+    if media.mounting is TapeMounting.CONTINUOUS_BOND:
+        return 0.0
+    return abs(thermal_differential_mm(media, strip_length_mm))
+
+
+def bond_strain_ppm(media: MediaConfig) -> float:
+    """Strain the adhesive carries when a bonded tape is held to the frame."""
+    if media.mounting is not TapeMounting.CONTINUOUS_BOND:
+        return 0.0
+    return abs(media.cte_mismatch_ppm_per_c) * media.temp_swing_deg_c
 
 
 def residual_scale_error(printer: PrinterConfig, nominal_mm: float) -> float:
@@ -100,6 +179,10 @@ def accuracy_report(
     return AccuracyReport(
         strip_length_mm=strip_length_mm,
         media_drift_mm=media_drift_mm(media, strip_length_mm),
+        thermal_drift_mm=thermal_drift_mm(media, strip_length_mm),
+        thermal_differential_mm=thermal_differential_mm(media, strip_length_mm),
+        thermal_free_mm=thermal_free_mm(media, strip_length_mm),
+        bond_strain_ppm=bond_strain_ppm(media),
         residual_scale_error=residual,
         cumulative_error_mm=strip_length_mm * residual,
         bounded_error_mm=tile_length_mm * residual,
@@ -156,6 +239,28 @@ def durability_advice(media: MediaConfig) -> tuple[str, ...]:
         notes.append(
             "Clean the mounting surface with isopropyl alcohol and apply from one end, "
             "squeegeeing forward to avoid trapped air and longitudinal stretch."
+        )
+
+    mismatch = abs(media.cte_mismatch_ppm_per_c)
+    if media.mounting is TapeMounting.CONTINUOUS_BOND:
+        notes.append(
+            f"Bonded along its full length, the strip is forced to follow the "
+            f"{media.frame_material.display_name.lower()} and thermal error largely "
+            f"cancels against features on that same frame. This does not hold if "
+            f"position is referenced to a separate base that does not share its "
+            f"temperature."
+        )
+        if mismatch > 10.0:
+            notes.append(
+                f"The {mismatch:.0f} ppm/C expansion mismatch is carried by the adhesive "
+                f"rather than by the reading. Use a permanent acrylic adhesive rated for "
+                f"the temperature range and inspect the ends, where shear peaks."
+            )
+    else:
+        notes.append(
+            "Anchored at one end, the strip expands at its own rate, so the full "
+            "substrate-to-frame difference reaches the position reading. Anchor at the "
+            "datum end so error grows away from zero rather than through it."
         )
 
     return tuple(notes)
