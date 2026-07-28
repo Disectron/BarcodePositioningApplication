@@ -17,13 +17,16 @@ from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QScrollArea,
     QSplitter,
     QTabWidget,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -36,6 +39,18 @@ from aops.core.config import AopsConfig
 from aops.core.drawlist import DrawList
 from aops.core.enums import Severity
 from aops.core.errors import AopsError
+from aops.core.presets import (
+    BUILT_IN_PRESETS,
+    Preset,
+    dump_preset,
+    load_preset,
+)
+from aops.core.presets import (
+    apply as apply_preset,
+)
+from aops.core.presets import (
+    capture as capture_preset,
+)
 from aops.core.project_io import (
     PROJECT_FILE_SUFFIX,
     dump_project,
@@ -186,6 +201,20 @@ class MainWindow(QMainWindow):
         self._act_undo = add("Undo", self._store.undo, "Ctrl+Z")
         self._act_redo = add("Redo", self._store.redo, "Ctrl+Y")
         bar.addSeparator()
+        self._presets_button = QToolButton(self)
+        self._presets_button.setText("Presets")
+        self._presets_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._presets_menu = QMenu(self._presets_button)
+        # Rebuilt on every open, so a preset saved a moment ago is there.
+        self._presets_menu.aboutToShow.connect(self._rebuild_presets_menu)
+        self._presets_button.setMenu(self._presets_menu)
+        self._presets_button.setToolTip(
+            "Reusable setups: geometry, media, printer and reader.\n"
+            "A preset never carries the machine name, strip ID or index range."
+        )
+        bar.addWidget(self._presets_button)
+
+        bar.addSeparator()
         add("Find setting", self._accordion.focus_filter, "Ctrl+F",
             "Jump to the filter box and search every section by name.")
         bar.addSeparator()
@@ -286,6 +315,73 @@ class MainWindow(QMainWindow):
             self._status_detail.setText(
                 f"Ready to export. {len(warnings)} warning(s)." if warnings else "Ready to export."
             )
+
+    # -- presets ------------------------------------------------------------
+
+    def _rebuild_presets_menu(self) -> None:
+        menu = self._presets_menu
+        menu.clear()
+
+        for preset in BUILT_IN_PRESETS:
+            action = menu.addAction(preset.name)
+            action.setToolTip(preset.description)
+            action.triggered.connect(lambda _c=False, p=preset: self._apply_preset(p))
+
+        saved = self._settings.list_presets()
+        if saved:
+            menu.addSeparator()
+            for path in saved:
+                action = menu.addAction(path.stem)
+                action.triggered.connect(lambda _c=False, p=path: self._apply_preset_file(p))
+
+        menu.addSeparator()
+        menu.addAction("Save current settings as preset...", self.on_save_preset)
+        if saved:
+            remove = menu.addMenu("Delete preset")
+            for path in saved:
+                remove.addAction(path.stem, lambda p=path: self._delete_preset(p))
+
+    def _apply_preset(self, preset: Preset) -> None:
+        """Apply a preset as one undoable step."""
+        self._store.set_config(apply_preset(preset, self._store.config))
+        self._status_detail.setText(
+            f"Applied preset '{preset.name}' - {preset.field_count} settings. "
+            f"Machine, strip ID and index range unchanged."
+        )
+
+    def _apply_preset_file(self, path: Path) -> None:
+        try:
+            self._apply_preset(load_preset(path.read_text(encoding="utf-8")))
+        except (AopsError, OSError) as exc:
+            QMessageBox.warning(self, "Could not open preset", str(exc))
+
+    def _delete_preset(self, path: Path) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "Delete preset",
+            f"Delete the preset '{path.stem}'?\n\nThis cannot be undone.",
+        )
+        if confirm == QMessageBox.StandardButton.Yes:
+            self._settings.delete_preset(path)
+
+    def on_save_preset(self) -> None:
+        name, ok = QInputDialog.getText(
+            self,
+            "Save preset",
+            "Name for this preset:\n\n"
+            "It will store the geometry, design, paper, printing, media, printer\n"
+            "and reader settings - but not the machine name, strip ID, revision\n"
+            "or index range, which belong to this strip alone.",
+        )
+        if not ok or not name.strip():
+            return
+        preset = capture_preset(self._store.config, name.strip())
+        try:
+            path = self._settings.save_preset(preset.name, dump_preset(preset, app_version=__version__))
+        except OSError as exc:
+            QMessageBox.warning(self, "Could not save preset", str(exc))
+            return
+        self._status_detail.setText(f"Saved preset '{preset.name}' to {path}")
 
     @Slot(object)
     def _apply_fix(self, fix: object) -> None:

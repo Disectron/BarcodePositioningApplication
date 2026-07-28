@@ -94,6 +94,39 @@ The whole suite runs headlessly, including the GUI smoke tests.
 
 ---
 
+## Presets
+
+A project file answers *"which strip is this?"*. A preset answers *"how do we build strips
+here?"* — the geometry, substrate, printer and reader you use on every job. **Presets → Save
+current settings as preset…** captures the second; the toolbar menu applies one in a single
+undoable step.
+
+The design decision that matters is what a preset **refuses** to carry:
+
+| Carried | Held back (`PER_STRIP_FIELDS`) |
+|---|---|
+| Symbol, payload, dimensions, design, output, paper, printing, media, printer, scanner | Machine name, project, strip ID, revision, comments |
+| Increment, pitch mode, direction, datum — house convention | Start/end index and origin — this axis's length |
+| Engineer and company — house details | |
+
+Without that split, applying "our standard 25 mm polyester setup" to a new job would also stamp it
+with another machine's name, another axis's length and someone else's revision letter — and since
+every change is applied live, the mistake would stay invisible until it reached a printed sheet.
+Both `capture` and `apply` filter the list, so a preset that has been hand-edited to smuggle an
+identity field in still cannot overwrite one.
+
+Presets are JSON in a folder (`*.aopspreset`), for the same reasons project files are: readable,
+diffable, and worth committing next to the PLC source or emailing to a colleague.
+
+Three ship with the tool, each encoding a recommendation this README argues for elsewhere:
+
+- **Label roll, 4 inch continuous** — thermal transfer on continuous polyester with a resin ribbon,
+  printed in one piece. Uses 3 mm margins, because a 4″ roll at the default 10 mm clips the band
+  stack, and 203 dpi, which is 8 dots/mm and lands a 1.000 mm module on exactly 8 whole dots.
+- **A4 sheets, commissioning set** — tiled A4 with the full engineering furniture.
+- **Fine pitch, 12.5 mm** — twice the position resolution, encoding tenths of a millimetre because
+  12.5 mm steps cannot be represented in whole ones.
+
 ## What the tool actually decides for you
 
 ### The field of view is set by the pitch, not the symbol size

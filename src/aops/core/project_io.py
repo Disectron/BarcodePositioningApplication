@@ -114,6 +114,21 @@ def _decode_dataclass(raw: dict[str, Any], target: type) -> Any:
     return target(**kwargs)
 
 
+def encode_value(value: Any) -> Any:
+    """Convert one field value into JSON-safe data.
+
+    Public so that presets, which serialise a *subset* of a configuration, can
+    use exactly the same encoding as a whole project file rather than a second
+    implementation that could drift from it.
+    """
+    return _encode_value(value)
+
+
+def decode_value(raw: Any, target: Any) -> Any:
+    """Convert raw JSON data back into the type annotated on a field."""
+    return _decode_value(raw, target)
+
+
 def _canonical_json(cfg: AopsConfig) -> str:
     """Stable serialisation used for fingerprinting.
 

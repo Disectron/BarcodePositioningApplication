@@ -7,7 +7,11 @@ commissioning project handed to a colleague.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QByteArray, QSettings
+from pathlib import Path
+
+from PySide6.QtCore import QByteArray, QSettings, QStandardPaths
+
+from aops.core.presets import PRESET_FILE_SUFFIX
 
 ORGANISATION = "AOPS"
 APPLICATION = "PositionStripGenerator"
@@ -63,5 +67,45 @@ class SettingsStore:
     def set_last_project_dir(self, path: str) -> None:
         self._settings.setValue("paths/project", path)
 
+    # -- presets ------------------------------------------------------------
+
+    def presets_dir(self) -> Path:
+        """Folder holding saved presets, created on first use.
+
+        Deliberately a folder of readable files rather than blobs inside
+        QSettings: a house standard is worth copying to a colleague, diffing
+        after a change, or committing next to the PLC source.
+        """
+        root = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+        path = Path(root or ".") / "presets"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def list_presets(self) -> list[Path]:
+        """Saved preset files, by name."""
+        try:
+            return sorted(self.presets_dir().glob(f"*{PRESET_FILE_SUFFIX}"))
+        except OSError:
+            return []
+
+    def save_preset(self, name: str, text: str) -> Path:
+        path = self.presets_dir() / f"{safe_filename(name)}{PRESET_FILE_SUFFIX}"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def delete_preset(self, path: Path) -> None:
+        path.unlink(missing_ok=True)
+
     def sync(self) -> None:
         self._settings.sync()
+
+
+def safe_filename(name: str) -> str:
+    """Reduce a preset name to something every filesystem accepts.
+
+    Presets are named by the user, and "4in roll / 300dpi" is a perfectly
+    reasonable name that is not a legal filename anywhere.
+    """
+    cleaned = "".join(c if c.isalnum() or c in " -_" else "-" for c in name).strip()
+    cleaned = " ".join(cleaned.split())
+    return (cleaned or "preset")[:80]

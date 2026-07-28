@@ -442,3 +442,94 @@ def test_every_registered_hint_belongs_to_a_real_field(app):
         if obj is None or not hasattr(obj, field):
             unknown.append(path)
     assert unknown == [], f"hints for fields that do not exist: {unknown}"
+
+
+# -- presets ----------------------------------------------------------------
+
+
+@pytest.fixture
+def preset_window(app, tmp_path, monkeypatch):
+    """A window whose presets are written to a temp dir, not the real one."""
+    from aops.ui.main_window import MainWindow
+    from aops.ui.settings_store import SettingsStore
+
+    monkeypatch.setattr(SettingsStore, "presets_dir", lambda self: tmp_path)
+    win = MainWindow()
+    yield win
+    win._store.mark_saved()
+    win.close()
+
+
+def test_presets_menu_lists_the_built_ins(preset_window):
+    from aops.core.presets import BUILT_IN_PRESETS
+
+    preset_window._rebuild_presets_menu()
+    entries = [a.text() for a in preset_window._presets_menu.actions() if a.text()]
+    for preset in BUILT_IN_PRESETS:
+        assert preset.name in entries
+
+
+def test_saving_writes_a_file_that_reloads(preset_window, tmp_path):
+    from aops import __version__
+    from aops.core.presets import capture, dump_preset, load_preset
+
+    preset_window._store.update_section("dimensions", pitch_mm=33.0)
+    preset = capture(preset_window._store.config, "house standard")
+    path = preset_window._settings.save_preset(
+        preset.name, dump_preset(preset, app_version=__version__)
+    )
+    assert path.exists() and path.parent == tmp_path
+    assert load_preset(path.read_text(encoding="utf-8")).name == "house standard"
+
+
+def test_applying_a_saved_preset_keeps_the_strip_identity(preset_window):
+    from aops import __version__
+    from aops.core.presets import capture, dump_preset
+
+    win = preset_window
+    win._store.update_section("dimensions", pitch_mm=33.0)
+    win._store.update_section("project", machine="GANTRY-01")
+    path = win._settings.save_preset(
+        "house", dump_preset(capture(win._store.config, "house"), app_version=__version__)
+    )
+
+    win._store.update_section("dimensions", pitch_mm=25.0)
+    win._store.update_section("project", machine="LATHE-07")
+    win._apply_preset_file(path)
+
+    assert win._store.config.dimensions.pitch_mm == pytest.approx(33.0)
+    assert win._store.config.project.machine == "LATHE-07"
+
+
+def test_applying_a_preset_is_a_single_undo_step(preset_window):
+    from aops.core.presets import BUILT_IN_PRESETS
+
+    win = preset_window
+    before = win._store.config
+    win._apply_preset(BUILT_IN_PRESETS[0])
+    assert win._store.config != before
+    win._store.undo()
+    assert win._store.config == before
+
+
+def test_a_corrupt_preset_file_warns_instead_of_crashing(preset_window, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    warned = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.append(a))
+
+    bad = tmp_path / "broken.aopspreset"
+    bad.write_text("{not json", encoding="utf-8")
+    before = preset_window._store.config
+    preset_window._apply_preset_file(bad)
+
+    assert warned, "a corrupt preset must report, not raise"
+    assert preset_window._store.config == before
+
+
+def test_preset_names_survive_being_turned_into_filenames(app):
+    from aops.ui.settings_store import safe_filename
+
+    assert safe_filename('4in roll / 300dpi') == "4in roll - 300dpi"
+    assert safe_filename("   ") == "preset"
+    assert len(safe_filename("x" * 200)) <= 80
