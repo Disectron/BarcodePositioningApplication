@@ -460,13 +460,48 @@ def preset_window(app, tmp_path, monkeypatch):
     win.close()
 
 
+def _menu_entries(menu, group: str = "") -> dict[str, set[str]]:
+    """Action labels in a menu, keyed by submenu name ("" for the top level).
+
+    Walked in one pass and returned as plain strings on purpose. A QMenu handed
+    out by addMenu() is owned by its action, so holding the wrapper across
+    statements can outlive the C++ object and raise from shiboken - which is a
+    property of how the test looks, not of the menu.
+    """
+    found: dict[str, set[str]] = {group: set()}
+    for action in menu.actions():
+        submenu = action.menu()
+        if submenu is not None:
+            for key, names in _menu_entries(submenu, action.text()).items():
+                found.setdefault(key, set()).update(names)
+        elif action.text():
+            found[group].add(action.text())
+    return found
+
+
+def _all_menu_entries(menu) -> set[str]:
+    return set().union(*_menu_entries(menu).values())
+
+
 def test_presets_menu_lists_the_built_ins(preset_window):
     from aops.core.presets import BUILT_IN_PRESETS
 
     preset_window._rebuild_presets_menu()
-    entries = [a.text() for a in preset_window._presets_menu.actions() if a.text()]
+    entries = _all_menu_entries(preset_window._presets_menu)
     for preset in BUILT_IN_PRESETS:
-        assert preset.name in entries
+        assert preset.name in entries, preset.name
+
+
+def test_grouped_presets_get_their_own_submenu(preset_window):
+    """Seven code sizes in the top level would bury everything else."""
+    from aops.core.presets import SIZE_GROUP, SIZE_PRESETS
+
+    preset_window._rebuild_presets_menu()
+    by_group = _menu_entries(preset_window._presets_menu)
+    assert SIZE_GROUP in by_group
+    assert {p.name for p in SIZE_PRESETS} == by_group[SIZE_GROUP]
+    # ...and none of them leaked into the top level.
+    assert not ({p.name for p in SIZE_PRESETS} & by_group[""])
 
 
 def test_saving_writes_a_file_that_reloads(preset_window, tmp_path):

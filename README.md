@@ -118,7 +118,33 @@ identity field in still cannot overwrite one.
 Presets are JSON in a folder (`*.aopspreset`), for the same reasons project files are: readable,
 diffable, and worth committing next to the PLC source or emailing to a colleague.
 
-Three ship with the tool, each encoding a recommendation this README argues for elsewhere:
+### Code sizes
+
+A **Code size** submenu offers 20×20 mm through 50×50 mm in 5 mm steps. Symbol size on its own is
+not a usable preset — three other values are forced to move with it, which is exactly why these are
+worth shipping rather than leaving to hand-editing:
+
+| Code | Spacing | Band | Clear border | Module | Reader window |
+|---|---|---|---|---|---|
+| 20×20 | 30 mm | 40 mm | 2.0 mm | 2.0 mm | 50 mm |
+| 30×30 | 45 mm | 50 mm | 3.0 mm | 3.0 mm | 75 mm |
+| 40×40 | 55 mm | 60 mm | 4.0 mm | 4.0 mm | 95 mm |
+| 50×50 | 70 mm | 70 mm | 5.0 mm | 5.0 mm | 120 mm |
+
+Enlarging the code enlarges its modules, so the **clear border must grow with it** (one module of a
+10×10 Data Matrix); the **spacing** must clear the code plus both borders with cutting tolerance
+left over; and the **band** has to be tall enough to hold both. Pitches are rounded to whole 5 mm
+steps, because position is `index × pitch` and reading 0, 45, 90 off a strip beats reading 0, 42, 84.
+
+The trade runs one way throughout: a bigger code reads from further away and survives more damage,
+but position resolves only to the spacing, and the reader window you must buy grows with it. Each
+preset's description states its own figures — generated from the values, so the text cannot drift
+from what it sets. The size presets touch geometry only, so they leave your media, paper and printer
+settings alone.
+
+### General presets
+
+Three more ship with the tool, each encoding a recommendation this README argues for elsewhere:
 
 - **Label roll, 4 inch continuous** — thermal transfer on continuous polyester with a resin ribbon,
   printed in one piece. Uses 3 mm margins, because a 4″ roll at the default 10 mm clips the band

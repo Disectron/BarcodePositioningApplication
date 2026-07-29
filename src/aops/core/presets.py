@@ -67,6 +67,9 @@ class Preset:
     description: str = ""
     #: section name -> {field: JSON-safe value}
     values: tuple[tuple[str, tuple[tuple[str, Any], ...]], ...] = ()
+    #: Optional menu grouping. Presets sharing a group get their own submenu,
+    #: which keeps a family like the code sizes from burying everything else.
+    group: str = ""
 
     @property
     def field_count(self) -> int:
@@ -133,6 +136,7 @@ def dump_preset(preset: Preset, *, app_version: str) -> str:
         "app_version": app_version,
         "name": preset.name,
         "description": preset.description,
+        "group": preset.group,
         "values": {section: dict(fields) for section, fields in preset.values},
     }
     return json.dumps(envelope, indent=2, sort_keys=True) + "\n"
@@ -175,14 +179,18 @@ def load_preset(text: str) -> Preset:
         name=str(envelope.get("name") or "Unnamed"),
         description=str(envelope.get("description") or ""),
         values=values,
+        group=str(envelope.get("group") or ""),
     )
 
 
-def _built_in(name: str, description: str, **sections: dict[str, Any]) -> Preset:
+def _built_in(
+    name: str, description: str, *, group: str = "", **sections: dict[str, Any]
+) -> Preset:
     """Build a partial preset from literal values, encoded like any other."""
     return Preset(
         name=name,
         description=description,
+        group=group,
         values=tuple(
             (section, tuple((k, encode_value(v)) for k, v in sorted(fields.items())))
             for section, fields in sorted(sections.items())
@@ -190,9 +198,73 @@ def _built_in(name: str, description: str, **sections: dict[str, Any]) -> Preset
     )
 
 
+#: Menu group holding the code-size family.
+SIZE_GROUP: Final[str] = "Code size"
+
+#: (symbol, pitch, strip height) in mm for each shipped code size.
+#:
+#: Symbol size alone is not a usable preset. Enlarging the code enlarges its
+#: modules, so the quiet zone must grow with it (one module of a 10x10 matrix,
+#: which a six-digit payload produces); the pitch must clear symbol plus both
+#: quiet zones with cutting tolerance left over; and the strip band has to be
+#: tall enough to hold the code and its quiet zones. Change one and the other
+#: three follow, which is exactly the coupling that makes this worth shipping
+#: as presets rather than leaving to the user.
+#:
+#: Pitches are rounded to whole 5 mm steps: position is index x pitch, and a
+#: controls engineer reading 0, 45, 90 off a strip has an easier time than one
+#: reading 0, 42, 84.
+_SIZE_TABLE_MM: Final[tuple[tuple[float, float, float], ...]] = (
+    (20.0, 30.0, 40.0),
+    (25.0, 40.0, 45.0),
+    (30.0, 45.0, 50.0),
+    (35.0, 50.0, 55.0),
+    (40.0, 55.0, 60.0),
+    (45.0, 60.0, 65.0),
+    (50.0, 70.0, 70.0),
+)
+
+#: Modules across a Data Matrix carrying a six-digit payload.
+_MATRIX_COLS: Final[int] = 10
+
+
+def _size_preset(symbol_mm: float, pitch_mm: float, height_mm: float) -> Preset:
+    """One code-size preset, with its consequences computed rather than typed.
+
+    The description states what the size costs and buys - module size, position
+    resolution, reader window - derived from the same numbers that go into the
+    preset, so the text cannot drift away from what it describes.
+    """
+    quiet_mm = symbol_mm / _MATRIX_COLS
+    module_mm = symbol_mm / _MATRIX_COLS
+    fov_mm = pitch_mm + symbol_mm
+
+    return _built_in(
+        f"{symbol_mm:.0f} x {symbol_mm:.0f} mm code",
+        f"{symbol_mm:.0f} mm code on a {pitch_mm:.0f} mm spacing, in a "
+        f"{height_mm:.0f} mm band. Modules are {module_mm:.1f} mm, so it reads "
+        f"from further away and survives more damage - but position resolves "
+        f"only to {pitch_mm:.0f} mm, and the reader needs a {fov_mm:.0f} mm "
+        f"window to never lose it.",
+        group=SIZE_GROUP,
+        dimensions={
+            "symbol_size_mm": symbol_mm,
+            "pitch_mm": pitch_mm,
+            "strip_height_mm": height_mm,
+            "quiet_zone_mm": quiet_mm,
+        },
+    )
+
+
+#: One preset per code size from 20 x 20 mm to 50 x 50 mm.
+SIZE_PRESETS: Final[tuple[Preset, ...]] = tuple(
+    _size_preset(symbol, pitch, height) for symbol, pitch, height in _SIZE_TABLE_MM
+)
+
+
 #: Shipped starting points. Unlike a captured preset these are partial - each
 #: sets only the fields that define it, so applying one changes nothing else.
-BUILT_IN_PRESETS: Final[tuple[Preset, ...]] = (
+GENERAL_PRESETS: Final[tuple[Preset, ...]] = (
     _built_in(
         "Label roll, 4 inch continuous",
         "Thermal transfer on continuous polyester with a resin ribbon, printed "
@@ -245,3 +317,7 @@ BUILT_IN_PRESETS: Final[tuple[Preset, ...]] = (
         payload={"unit_scale": 10, "digits": 6},
     ),
 )
+
+
+#: Everything offered in the Presets menu.
+BUILT_IN_PRESETS: Final[tuple[Preset, ...]] = GENERAL_PRESETS + SIZE_PRESETS

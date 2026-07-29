@@ -28,6 +28,8 @@ from aops.core.errors import ProjectFileError
 from aops.core.presets import (
     BUILT_IN_PRESETS,
     PER_STRIP_FIELDS,
+    SIZE_GROUP,
+    SIZE_PRESETS,
     Preset,
     apply,
     capture,
@@ -245,3 +247,98 @@ def test_presets_do_not_disturb_the_paper_preset_unless_they_set_it():
     fine = next(p for p in BUILT_IN_PRESETS if "fine" in p.name.lower())
     start = dc.replace(AopsConfig(), paper=dc.replace(AopsConfig().paper, preset=PaperPreset.A3))
     assert apply(fine, start).paper.preset is PaperPreset.A3
+
+
+# -- the code-size family ---------------------------------------------------
+
+
+def test_size_presets_cover_20_to_50_in_five_millimetre_steps():
+
+    sizes = [apply(p, AopsConfig()).dimensions.symbol_size_mm for p in SIZE_PRESETS]
+    assert sizes == [20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0]
+
+
+@pytest.mark.parametrize(
+    "preset", SIZE_PRESETS, ids=lambda p: p.name
+)
+def test_each_size_sets_everything_the_size_forces(preset: Preset):
+    """Symbol size alone is not a usable preset - three others move with it."""
+    fields = {f"{section}.{f}" for section, pairs in preset.values for f, _v in pairs}
+    assert fields == {
+        "dimensions.symbol_size_mm",
+        "dimensions.pitch_mm",
+        "dimensions.strip_height_mm",
+        "dimensions.quiet_zone_mm",
+    }
+
+
+@pytest.mark.parametrize(
+    "preset", SIZE_PRESETS, ids=lambda p: p.name
+)
+def test_each_size_satisfies_the_cell_invariants(preset: Preset):
+    from aops.core.cell import cell_invariants, resolve_cell
+
+    cfg = apply(preset, AopsConfig())
+    assert cell_invariants(resolve_cell(cfg.dimensions)) == ()
+
+
+@pytest.mark.parametrize(
+    "preset", SIZE_PRESETS, ids=lambda p: p.name
+)
+def test_each_size_leaves_real_cutting_tolerance(preset: Preset):
+    """GEO-013 wants 3 mm of white; a shipped preset should be well clear."""
+    d = apply(preset, AopsConfig()).dimensions
+    assert d.pitch_mm - d.symbol_size_mm >= 10.0
+
+
+@pytest.mark.parametrize(
+    "preset", SIZE_PRESETS, ids=lambda p: p.name
+)
+def test_each_size_carries_a_quiet_zone_the_symbology_accepts(preset: Preset):
+    """A bigger code has bigger modules, so it needs a bigger clear border."""
+    cfg = apply(preset, AopsConfig())
+    findings = run_rules(ALL_RULES, cfg, derive(cfg)).findings
+    assert not [f for f in findings if f.rule_id == "GEO-006"]
+
+
+def test_bigger_codes_mean_bigger_modules_and_coarser_position():
+    """The trade the descriptions promise, asserted rather than claimed."""
+
+    modules, pitches = [], []
+    for preset in SIZE_PRESETS:
+        cfg = apply(preset, AopsConfig())
+        modules.append(derive(cfg).scanner.module_size_mm)
+        pitches.append(cfg.dimensions.pitch_mm)
+    assert modules == sorted(modules)
+    assert pitches == sorted(pitches)
+
+
+def test_size_descriptions_quote_their_own_numbers():
+    """Descriptions are generated, so they cannot drift from the values."""
+
+    for preset in SIZE_PRESETS:
+        cfg = apply(preset, AopsConfig())
+        assert f"{cfg.dimensions.pitch_mm:.0f} mm spacing" in preset.description
+        fov = cfg.dimensions.pitch_mm + cfg.dimensions.symbol_size_mm
+        assert f"{fov:.0f} mm" in preset.description
+
+
+def test_size_presets_share_one_group():
+
+    assert {p.group for p in SIZE_PRESETS} == {SIZE_GROUP}
+
+
+def test_size_presets_leave_media_and_paper_alone():
+    """Picking a code size must not silently change what you print it on."""
+
+    start = apply(BUILT_IN_PRESETS[0], AopsConfig())  # the roll setup
+    for preset in SIZE_PRESETS:
+        out = apply(preset, start)
+        assert out.paper.preset is start.paper.preset
+        assert out.media == start.media
+
+
+def test_group_survives_a_round_trip():
+
+    restored = load_preset(dump_preset(SIZE_PRESETS[0], app_version="test"))
+    assert restored.group == SIZE_PRESETS[0].group

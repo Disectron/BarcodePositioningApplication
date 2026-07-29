@@ -205,6 +205,7 @@ class MainWindow(QMainWindow):
         self._presets_button.setText("Presets")
         self._presets_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self._presets_menu = QMenu(self._presets_button)
+        self._presets_menu.setToolTipsVisible(True)
         # Rebuilt on every open, so a preset saved a moment ago is there.
         self._presets_menu.aboutToShow.connect(self._rebuild_presets_menu)
         self._presets_button.setMenu(self._presets_menu)
@@ -322,8 +323,18 @@ class MainWindow(QMainWindow):
         menu = self._presets_menu
         menu.clear()
 
+        # Ungrouped presets first, then one submenu per group, so a family like
+        # the code sizes does not bury everything else.
+        groups: dict[str, QMenu] = {}
         for preset in BUILT_IN_PRESETS:
-            action = menu.addAction(preset.name)
+            target = menu
+            if preset.group:
+                submenu = groups.get(preset.group)
+                if submenu is None:
+                    submenu = groups[preset.group] = menu.addMenu(preset.group)
+                    submenu.setToolTipsVisible(True)
+                target = submenu
+            action = target.addAction(preset.name)
             action.setToolTip(preset.description)
             action.triggered.connect(lambda _c=False, p=preset: self._apply_preset(p))
 
