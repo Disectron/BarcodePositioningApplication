@@ -159,6 +159,37 @@ position is lost (`SCN-003`, a hard error). `SCN-005` checks the code still fits
 at whatever distance the horizontal requirement dictates — easy to overlook, since the strip geometry
 only drives the horizontal one.
 
+#### Working backwards from a fixed mounting distance
+
+Leaving **Mounting distance** at 0 keeps the forward calculation: pick a geometry, get told the
+distance it demands. On a real machine that is the wrong way round — the distance is decided by a
+bracket, a guard or a clearance long before anyone picks a spacing.
+
+Setting it inverts the whole calculation. Distance and view angle fix the window, and the geometry
+has to fit inside that budget:
+
+```
+window = distance · 2 · tan(angle / 2)          available
+       ≥ N · pitch + code                        required
+```
+
+The panel then reports the window, the spare room, and what that room buys — *"spacing up to 68 mm,
+or a code up to 49 mm"* — and **Fit spacing to mounting distance** widens or narrows the pitch to use
+it exactly. For the NVF230-SR with a 10 mm code:
+
+| Mount at | Window | Max spacing | Max code |
+|---|---|---|---|
+| 50 mm | 45 mm | 35 mm | 20 mm |
+| 100 mm | 90 mm | 80 mm | 41 mm |
+| 150 mm | 135 mm | 125 mm | 61 mm |
+| 200 mm | 180 mm | 170 mm | 82 mm |
+
+`SCN-009` blocks export when the geometry does not fit, with the pitch that would — but only when
+that pitch is still a legal cell. Once the window cannot hold the code plus its quiet zones at all,
+the pitch is not what is at fault and no suggestion is offered rather than a nonsensical one.
+`SCN-008` catches a distance the reader cannot focus at, `SCN-010` reports unused window as available
+resolution, `SCN-011` the vertical shortfall.
+
 Currently shipped: **Newland NLS-NVF230-SR**. Adding another is one call to `_reader_preset()` in
 `core/presets.py`, which **requires a `source`** — these are the only vendor figures in the project,
 and `core/scanner.py` states plainly that it invents none, so each has to be traceable to the page it

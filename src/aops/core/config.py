@@ -282,10 +282,26 @@ class ScannerConfig:
     #: Pixels across the sensor's long axis.
     sensor_px_h: int = 0
 
+    #: Where the reader can actually be mounted, in mm. Zero means "wherever
+    #: the geometry needs", which is how the tool worked originally: pick a
+    #: pitch and a code size, and it reports the distance those demand.
+    #:
+    #: On a real machine that is backwards. The distance is set by a bracket, a
+    #: guard or a clearance, and is not negotiable - so setting it here inverts
+    #: the calculation. The distance and the reader's view angle together fix
+    #: how much window is available, and the geometry then has to fit inside
+    #: that budget rather than dictate it.
+    mount_distance_mm: float = 0.0
+
     @property
     def has_reader_spec(self) -> bool:
         """True once a real reader's field of view has been entered."""
         return self.fov_angle_deg > 0.0
+
+    @property
+    def distance_is_fixed(self) -> bool:
+        """True when a mounting distance constrains the geometry."""
+        return self.has_reader_spec and self.mount_distance_mm > 0.0
 
 
 @dataclass(frozen=True, slots=True)

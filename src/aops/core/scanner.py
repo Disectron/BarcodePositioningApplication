@@ -32,7 +32,7 @@ rises to 85 mm. Choosing N also buys a stated occlusion tolerance of
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, radians, tan
+from math import cos, floor, radians, tan
 
 from aops.core.cell import CellSpec
 from aops.core.config import ScannerConfig
@@ -62,9 +62,40 @@ class ScannerRecommendation:
     #: distance, against `px_per_module` as the target.
     available_px_per_module: float = 0.0
 
+    #: --- when a mounting distance is fixed, the budget it allows -----------
+    #: Window the reader actually has at the chosen mounting distance.
+    available_fov_mm: float = 0.0
+    available_fov_v_mm: float = 0.0
+    #: Available minus required. Negative means the geometry does not fit.
+    fov_headroom_mm: float = 0.0
+    #: Largest pitch that still fits, keeping the current code size.
+    max_pitch_mm: float = 0.0
+    #: Largest code that fits, if the pitch were reduced to its minimum.
+    max_symbol_mm: float = 0.0
+
     @property
     def has_reader_spec(self) -> bool:
         return self.required_wd_mm > 0.0
+
+    @property
+    def distance_is_fixed(self) -> bool:
+        return self.available_fov_mm > 0.0
+
+    @property
+    def fits_at_distance(self) -> bool:
+        return self.fov_headroom_mm >= 0.0
+
+
+def _floor_um(mm: float) -> float:
+    """Round a suggested dimension down to the micrometre grid.
+
+    These bounds are exact solutions to an inequality, so a geometry built from
+    one sits precisely on the boundary. The cell model then rounds to whole
+    micrometres, which can tip it a thousandth of a millimetre over and make
+    the suggestion fail the very check it was meant to satisfy. Flooring first
+    keeps a suggestion something that actually fits.
+    """
+    return floor(mm * 1000.0) / 1000.0
 
 
 def _sensor_class(px: int) -> str:
@@ -127,6 +158,26 @@ def recommend(
         if cfg.sensor_px_h > 0 and fov_continuous > 0:
             available_px = cfg.sensor_px_h / fov_continuous * module_mm
 
+    # A fixed mounting distance turns the calculation around: distance and view
+    # angle fix the window, and the geometry has to fit inside it.
+    avail_fov = avail_fov_v = headroom = max_pitch = max_symbol = 0.0
+    if cfg.distance_is_fixed:
+        wd = cfg.mount_distance_mm
+        avail_fov = wd * 2.0 * tan(radians(cfg.fov_angle_deg / 2.0))
+        if cfg.fov_vertical_deg > 0:
+            avail_fov_v = wd * 2.0 * tan(radians(cfg.fov_vertical_deg / 2.0))
+        headroom = avail_fov - fov_continuous
+
+        # N*pitch + symbol <= window, solved for pitch with the code as given.
+        max_pitch = _floor_um(max(0.0, (avail_fov - cell.symbol_mm) / n))
+
+        # The largest code that fits at all, which is a different question: it
+        # assumes the pitch drops to its own minimum of symbol + 2 quiet zones,
+        # and a quiet zone is one module, so both scale with the code.
+        #   window >= N*(S + 2*S/cols) + S  =>  S <= window / (N*(1 + 2/cols) + 1)
+        if matrix_cols > 0:
+            max_symbol = _floor_um(avail_fov / (n * (1.0 + 2.0 / matrix_cols) + 1.0))
+
     notes = (
         f"Assumes {cfg.px_per_module:.1f} pixels per module.",
         f"Assumes a {cfg.sensor_width_mm:.1f} mm wide sensor.",
@@ -150,4 +201,9 @@ def recommend(
         required_wd_mm=required_wd,
         vertical_fov_mm=vertical_fov,
         available_px_per_module=available_px,
+        available_fov_mm=avail_fov,
+        available_fov_v_mm=avail_fov_v,
+        fov_headroom_mm=headroom,
+        max_pitch_mm=max_pitch,
+        max_symbol_mm=max_symbol,
     )

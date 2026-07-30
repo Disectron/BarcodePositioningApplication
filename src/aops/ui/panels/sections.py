@@ -687,26 +687,59 @@ class ScannerPanel(ConfigPanel):
             "sensor_px_h", "Sensor pixels across",
             make_int(cfg.scanner.sensor_px_h, minimum=0, maximum=20000, step=64),
         )
+        self.add_row(
+            "mount_distance_mm", "Mounting distance",
+            make_double(cfg.scanner.mount_distance_mm, minimum=0.0, maximum=10000.0,
+                        step=5.0, decimals=1),
+            suffix="mm",
+        )
 
         self.mount = make_readonly("")
         self.add_readout("Mount this far away", self.mount, suffix="mm")
+        self.window = make_readonly("")
+        self.add_readout("Window at that distance", self.window)
+        self.budget = make_readonly("")
+        self.add_readout("Room for", self.budget)
+
+        self.fit_button = QPushButton("Fit spacing to mounting distance", self)
+        self.fit_button.clicked.connect(self._fit_to_distance)
+        self.add_widget(self.fit_button)
+
         self.add_note(
-            "Fill in your reader's datasheet figures and the mounting distance "
-            "becomes exact rather than estimated - and the tool can tell you "
-            "whether that distance is one it can actually focus at."
+            "Leave the mounting distance at 0 and the tool works forwards: pick a "
+            "geometry, and it reports the distance that geometry demands. Set it, "
+            "and the calculation inverts - the distance and the view angle fix how "
+            "much window there is, and the geometry has to fit inside it."
         )
+
+    def _fit_to_distance(self) -> None:
+        """Widen or narrow the spacing to use the window exactly."""
+        derived = self._derived
+        if derived is None or not derived.scanner.distance_is_fixed:
+            return
+        target = derived.scanner.max_pitch_mm
+        floor = derived.cell.symbol_mm + 2 * derived.cell.quiet_zone_mm
+        if target >= floor:
+            self._store.update_section("dimensions", pitch_mm=round(target, 3))
 
     def load(self, cfg: AopsConfig, derived: DerivedGeometry | None) -> None:
         super().load(cfg, derived)
+        #: Kept so the Fit button can act on the current derived geometry.
+        self._derived = derived
+
         if derived is None:
-            self.fov.setText("-")
-            self.mount.setText("-")
+            for editor in (self.fov, self.mount, self.window, self.budget):
+                editor.setText("-")
+            self.fit_button.setEnabled(False)
             return
 
         rec = derived.scanner
         self.fov.setText(f"{rec.fov_continuous_mm:.1f}")
+
         if not rec.has_reader_spec:
             self.mount.setText("- (enter a view angle)")
+        elif rec.distance_is_fixed:
+            self.mount.setText("fixed below")
         else:
             # Below the near focus limit the view is only wider, which is safe;
             # say so rather than quoting a distance the reader cannot focus at.
@@ -715,6 +748,22 @@ class ScannerPanel(ConfigPanel):
                 self.mount.setText(f"{floor:.0f} or more (nearest focus)")
             else:
                 self.mount.setText(f"{rec.required_wd_mm:.0f}")
+
+        if rec.distance_is_fixed:
+            sign = "+" if rec.fov_headroom_mm >= 0 else ""
+            self.window.setText(
+                f"{rec.available_fov_mm:.0f} mm  ({sign}{rec.fov_headroom_mm:.0f} mm spare)"
+            )
+            self.budget.setText(
+                f"spacing up to {rec.max_pitch_mm:.0f} mm, or a code up to "
+                f"{rec.max_symbol_mm:.0f} mm"
+            )
+            floor = derived.cell.symbol_mm + 2 * derived.cell.quiet_zone_mm
+            self.fit_button.setEnabled(rec.max_pitch_mm >= floor)
+        else:
+            self.window.setText("- (set a mounting distance)")
+            self.budget.setText("-")
+            self.fit_button.setEnabled(False)
 
 
 class ProjectPanel(ConfigPanel):

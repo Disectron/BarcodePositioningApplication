@@ -845,6 +845,10 @@ def scn_reader_fit(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable
     """
     if derived is None or not cfg.scanner.has_reader_spec:
         return
+    # Once a mounting distance is pinned, scn_fixed_distance owns the distance
+    # story and repeating it here would say the same thing twice.
+    if cfg.scanner.distance_is_fixed:
+        return
     rec = derived.scanner
     scn = cfg.scanner
     wd = rec.required_wd_mm
@@ -894,6 +898,83 @@ def scn_reader_fit(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable
                  "reached. Dedicated position readers see several at once for exactly "
                  "this reason.",
                  "scanner.min_codes_in_view")
+
+
+def scn_fixed_distance(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """Whether the geometry fits the window available where the reader can go.
+
+    With a mounting distance pinned down, the window stops being something the
+    geometry demands and becomes a budget it has to live inside. That is the
+    honest way round for a machine, where the bracket position is decided by
+    guards and clearances long before anyone picks a pitch.
+    """
+    if derived is None or not cfg.scanner.distance_is_fixed:
+        return
+    rec = derived.scanner
+    scn = cfg.scanner
+    wd = scn.mount_distance_mm
+
+    if scn.dof_max_mm > 0 and wd > scn.dof_max_mm:
+        yield _f("SCN-008", Severity.ERROR,
+                 f"The reader cannot focus at {wd:.0f} mm; its range is "
+                 f"{scn.dof_min_mm:.0f}-{scn.dof_max_mm:.0f} mm.",
+                 "scanner.mount_distance_mm",
+                 f"Mount between {scn.dof_min_mm:.0f} and {scn.dof_max_mm:.0f} mm.",
+                 _mm_fix("scanner.mount_distance_mm", scn.dof_max_mm, "mounting distance"))
+    elif scn.dof_min_mm > 0 and wd < scn.dof_min_mm:
+        yield _f("SCN-008", Severity.ERROR,
+                 f"The reader cannot focus as close as {wd:.0f} mm; its nearest is "
+                 f"{scn.dof_min_mm:.0f} mm.",
+                 "scanner.mount_distance_mm",
+                 f"Mount at {scn.dof_min_mm:.0f} mm or further.",
+                 _mm_fix("scanner.mount_distance_mm", scn.dof_min_mm, "mounting distance"))
+
+    in_focus = (scn.dof_min_mm <= 0 or wd >= scn.dof_min_mm) and (
+        scn.dof_max_mm <= 0 or wd <= scn.dof_max_mm
+    )
+
+    if not rec.fits_at_distance:
+        # Only offer to narrow the spacing when the result would still be a
+        # legal cell. Once the window cannot even hold the code plus its quiet
+        # zones, the pitch is not the thing at fault and "set pitch to 0" would
+        # be worse than no suggestion at all.
+        floor = derived.cell.symbol_mm + 2 * derived.cell.quiet_zone_mm
+        pitch_fix = (
+            _mm_fix("dimensions.pitch_mm", rec.max_pitch_mm, "cell pitch")
+            if rec.max_pitch_mm >= floor
+            else None
+        )
+        remedy = (
+            f"Reduce the spacing to {rec.max_pitch_mm:.1f} mm, reduce the code below "
+            f"{rec.max_symbol_mm:.1f} mm, or mount further back."
+            if pitch_fix is not None
+            else f"The window cannot hold this code at all here. Reduce the code below "
+            f"{rec.max_symbol_mm:.1f} mm, or mount further back."
+        )
+        yield _f("SCN-009", Severity.ERROR,
+                 f"At {wd:.0f} mm the reader sees {rec.available_fov_mm:.0f} mm, but a "
+                 f"full spacing plus one code needs {rec.fov_continuous_mm:.0f} mm - "
+                 f"{-rec.fov_headroom_mm:.0f} mm short. There will be blind spots where "
+                 f"no complete code is in view.",
+                 "scanner.mount_distance_mm", remedy, pitch_fix)
+    elif in_focus and rec.max_pitch_mm > derived.cell.pitch_mm * 1.25:
+        # Spare window is spare resolution: a wider spacing was affordable, or
+        # equally the reader could have gone closer.
+        yield _f("SCN-010", Severity.INFO,
+                 f"{rec.fov_headroom_mm:.0f} mm of the reader's window is unused. The "
+                 f"spacing could go as wide as {rec.max_pitch_mm:.0f} mm, or the code "
+                 f"as large as {rec.max_symbol_mm:.0f} mm, at this distance.",
+                 "scanner.mount_distance_mm")
+
+    if rec.available_fov_v_mm > 0:
+        needed_v = derived.cell.symbol_mm + 2 * derived.cell.quiet_zone_mm
+        if rec.available_fov_v_mm < needed_v:
+            yield _f("SCN-011", Severity.ERROR,
+                     f"At {wd:.0f} mm the reader sees only {rec.available_fov_v_mm:.0f} mm "
+                     f"vertically, and the code plus its clear borders is "
+                     f"{needed_v:.0f} mm tall.",
+                     "scanner.mount_distance_mm",
+                     "Mount further back, or reduce the code size.")
 
 
 def prj_metadata(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
@@ -951,5 +1032,6 @@ ALL_RULES: tuple[Rule, ...] = (
     scn_fov,
     scn_sensor,
     scn_reader_fit,
+    scn_fixed_distance,
     prj_metadata,
 )

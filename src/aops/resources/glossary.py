@@ -555,6 +555,16 @@ FIELD_HINTS: dict[str, str] = {
         "Used to check how many pixels actually land on one module at the "
         "required distance, against the target above. Leave at 0 if unknown."
     ),
+    "scanner.mount_distance_mm": (
+        "Where the reader can actually be mounted.\n\n"
+        "Leave at 0 and the tool works forwards: pick a geometry and it reports "
+        "the distance that geometry demands.\n\n"
+        "Set it and the calculation inverts. On a real machine the distance is "
+        "decided by a bracket, a guard or a clearance long before anyone picks "
+        "a spacing - so the distance and the view angle fix how much window "
+        "there is, and the geometry has to fit inside that budget instead of "
+        "dictating it."
+    ),
     # -- 11. project -------------------------------------------------------
     "project.machine": (
         "Which machine this strip is for. Printed on every sheet, so a strip "
