@@ -36,6 +36,8 @@ from aops.core.rules import ALL_RULES  # noqa: E402
 from aops.core.stats import derive  # noqa: E402
 from aops.core.validation import run_rules  # noqa: E402
 from aops.resources.field_levels import (  # noqa: E402
+    JOB_BAR_FIELDS,
+    REACHABLE_IN_SIMPLE,
     SIMPLE_FIELDS,
     UiLevel,
     level_for,
@@ -52,11 +54,23 @@ def app():
 
 @pytest.fixture
 def window(app, tmp_path, monkeypatch):
+    """A window whose preferences live in this test, not in the real QSettings.
+
+    The mode is persisted, so reading it back from the machine's own settings
+    file would make these tests depend on whatever the developer last clicked -
+    and writing to it would leave the application in whichever mode the suite
+    finished in. Both directions are stubbed onto a local dict, which also makes
+    the round-trip test test the mechanism rather than the disk.
+    """
     from aops.ui.main_window import MainWindow
     from aops.ui.settings_store import SettingsStore
 
+    stored = {"mode": UiLevel.ADVANCED.name}
     monkeypatch.setattr(SettingsStore, "presets_dir", lambda self: tmp_path)
-    monkeypatch.setattr(SettingsStore, "set_ui_mode", lambda self, name: None)
+    monkeypatch.setattr(SettingsStore, "ui_mode", lambda self: stored["mode"])
+    monkeypatch.setattr(
+        SettingsStore, "set_ui_mode", lambda self, name: stored.__setitem__("mode", name)
+    )
     win = MainWindow()
     yield win
     win._store.mark_saved()
@@ -107,14 +121,15 @@ SIMPLE_MISTAKES = {
 def test_every_simple_mistake_is_fixable_in_simple_mode(label):
     """The closure property, walked over mistakes Simple mode permits.
 
-    An error is clearable if the control it points at is in the Simple set, or
-    if it carries a one-click Fix - the Issues list is visible in both modes,
+    An error is clearable if the control it points at is reachable in Simple -
+    an accordion row Simple shows, or a job-bar field on screen in both modes -
+    or if it carries a one-click Fix. The Issues list is visible in both modes,
     and activating a finding switches to Advanced on the user's behalf.
     """
     unreachable = []
     for finding in errors_for(SIMPLE_MISTAKES[label]):
         reachable = (
-            finding.field in SIMPLE_FIELDS
+            finding.field in REACHABLE_IN_SIMPLE
             or finding.fix is not None
             or finding.field is None
         )
@@ -259,3 +274,204 @@ def test_a_resolved_warning_clears_the_header_colour(window):
     section.set_severity(None, 0)
     assert section.header.styleSheet() == ""
     assert "!" not in section.header.text()
+
+
+# -- section numbering -----------------------------------------------------
+
+
+def visible_numbers(window) -> list[int]:
+    return [
+        s.number() for s in window._accordion.sections().values() if not s.isHidden()
+    ]
+
+
+def test_the_numbers_have_no_gaps_in_either_mode(window):
+    """'1, 2, 4, 6, 7' sends the user looking for sections that are not missing."""
+    for mode in (UiLevel.SIMPLE, UiLevel.ADVANCED):
+        window._set_mode(mode)
+        numbers = visible_numbers(window)
+        assert numbers == list(range(1, len(numbers) + 1)), mode.name
+
+
+def test_renumbering_keeps_a_badge(window):
+    """The header text is rebuilt from the number, so a naive fix would lose it."""
+    window._set_mode(UiLevel.ADVANCED)
+    section = window._accordion.section("scanner")
+    section.set_severity(Severity.ERROR, 3)
+    section.set_number(2)
+    assert "! 3" in section.header.text()
+    assert section.header.text().startswith("2.")
+
+
+def test_switching_modes_does_not_lose_a_badge(window):
+    """Both sections carrying it stay in Simple, so the badge must survive."""
+    window._store.update_section(
+        "dimensions", pitch_mm=25.0, symbol_size_mm=40.0
+    )
+    window._controller.recompute()
+    window._set_mode(UiLevel.SIMPLE)
+    header = window._accordion.section("dimensions").header
+    assert "!" in header.text()
+    assert header.styleSheet()
+
+
+# -- inert controls --------------------------------------------------------
+
+
+def test_qr_parameters_are_dead_under_data_matrix(window):
+    """Live, they invite the user to set a level and watch nothing change."""
+    from aops.core.enums import Symbology
+
+    rows = window._panels["symbol"].rows()
+    assert window._store.config.symbol.symbology is Symbology.DATA_MATRIX
+    assert not rows["symbol.qr_ecc"].isEnabled()
+    assert not rows["symbol.qr_version"].isEnabled()
+
+    window._store.update_section("symbol", symbology=Symbology.QR)
+    window._controller.recompute()
+    assert rows["symbol.qr_ecc"].isEnabled()
+    assert rows["symbol.qr_version"].isEnabled()
+
+
+# -- the job bar -----------------------------------------------------------
+
+
+def test_the_job_bar_is_on_screen_in_both_modes(window):
+    """It describes the strip, not a setting group, so no mode hides it."""
+    for mode in (UiLevel.SIMPLE, UiLevel.ADVANCED):
+        window._set_mode(mode)
+        assert not window._job_bar.isHidden()
+
+
+def test_the_job_bar_fields_left_the_accordion_simple_set(window):
+    """Otherwise Simple mode's section 10 duplicates the top of the window."""
+    assert JOB_BAR_FIELDS
+    assert not (JOB_BAR_FIELDS & SIMPLE_FIELDS)
+    window._set_mode(UiLevel.SIMPLE)
+    assert window._accordion.section("project").isHidden()
+
+
+def test_a_finding_on_a_job_bar_field_does_not_switch_modes(window):
+    """Switching to Advanced to reach a box already on screen would be a lie.
+
+    Asserted on focusWidget() rather than hasFocus(): the window is never shown
+    in a headless test, so no widget in it holds real keyboard focus - but Qt
+    still records which one would.
+    """
+    window._set_mode(UiLevel.SIMPLE)
+    window._focus_field("project.strip_id")
+    assert window._mode is UiLevel.SIMPLE
+    assert window.focusWidget() is window._job_bar.strip_edit
+
+
+def ask_for_travel(window, millimetres: float) -> None:
+    """Drive the spin box the way a user would, then settle the pipeline.
+
+    Goes through the widget rather than calling the window's slot directly: the
+    rounding note is recorded on the way in, so a test that skipped the box
+    would not be exercising the path that produces it.
+    """
+    window._job_bar.travel_spin.setValue(millimetres)
+    window._controller.recompute()
+
+
+def test_asking_for_an_axis_travel_sets_the_index_range(window):
+    from aops.core.positions import travel_mm
+
+    window._store.update_section("dimensions", pitch_mm=25.0)
+    window._controller.recompute()
+    ask_for_travel(window, 2000.0)
+
+    cfg = window._store.config
+    # 80, not 81: the first code sits at zero, so 2000 mm is 80 pitches away.
+    assert cfg.position.end_index == 80
+    assert travel_mm(cfg.position, window._controller.derived.cell) == pytest.approx(2000.0)
+
+
+def test_a_travel_that_is_not_a_whole_number_of_codes_rounds_up_and_says_so(window):
+    window._store.update_section("dimensions", pitch_mm=25.0)
+    window._controller.recompute()
+    ask_for_travel(window, 2010.0)
+
+    assert window._store.config.position.end_index == 81  # 2025 mm, not 2000
+    assert "2025.0" in window._job_bar.note.text()
+
+
+def test_the_rounding_note_does_not_outlive_the_request(window):
+    """Held on to, it would blame a later pitch change on the rounding."""
+    window._store.update_section("dimensions", pitch_mm=25.0)
+    window._controller.recompute()
+    ask_for_travel(window, 2010.0)
+    assert window._job_bar.note.text()
+
+    window._store.update_section("dimensions", pitch_mm=30.0)
+    window._controller.recompute()
+    assert window._job_bar.note.text() == ""
+
+
+def test_the_travel_box_does_not_grow_the_strip_on_every_refresh(window):
+    """The write-back is guarded; without it, rounding up would compound."""
+    window._store.update_section("dimensions", pitch_mm=25.0)
+    window._controller.recompute()
+    ask_for_travel(window, 2010.0)
+    settled = window._store.config.position.end_index
+
+    for _ in range(3):
+        window._job_bar.update_from(window._store.config, window._controller.derived)
+        window._controller.recompute()
+    assert window._store.config.position.end_index == settled
+
+
+def test_an_unresolved_geometry_does_not_guess_an_index_range(window):
+    """The pitch itself may be what is wrong, so there is nothing to convert."""
+    window._store.update_section("dimensions", pitch_mm=0.0)
+    window._controller.recompute()
+    assert window._controller.derived is None
+
+    before = window._store.config.position.end_index
+    window._on_travel_requested(5000.0)
+    assert window._store.config.position.end_index == before
+
+
+def test_the_job_bar_reports_what_the_settings_produce(window):
+    window._controller.recompute()
+    text = window._job_bar.readout.text()
+    assert "421 codes" in text
+    assert "25.000 mm apart" in text
+
+
+# -- the issues list -------------------------------------------------------
+
+
+def test_issues_are_never_behind_a_tab(window):
+    """The reason the export button is greyed out must not need a click to see."""
+    titles = {window._tabs.tabText(i) for i in range(window._tabs.count())}
+    assert "Issues" not in titles
+    assert not window._issues.isHidden()
+
+
+def test_the_issues_heading_carries_the_count_even_when_collapsed(window):
+    """Shrunk to nothing in the splitter, the heading is all that is left."""
+    window._store.update_section("payload", digits=2)
+    window._controller.recompute()
+    assert "blocking" in window._issues.heading.text()
+    assert window._issues.heading.styleSheet()
+
+    window._store.update_section("payload", digits=6)
+    window._controller.recompute()
+    assert "blocking" not in window._issues.heading.text()
+
+
+def test_the_issues_heading_does_not_claim_none_while_listing_notes(window):
+    """A green 'none' directly above two visible lines reads as a bug."""
+    # A default project has no strip ID, which is a warning in its own right.
+    window._store.update_section("project", strip_id="X-AXIS")
+    window._controller.recompute()
+
+    report = window._controller.report
+    assert [f for f in report.findings if f.severity is Severity.INFO]
+    assert not [f for f in report.findings if f.severity >= Severity.WARNING]
+
+    heading = window._issues.heading.text()
+    assert "none blocking" in heading
+    assert "note" in heading

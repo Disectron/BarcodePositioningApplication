@@ -168,6 +168,19 @@ QPushButton[accent="true"]:disabled {
     color: #5a6069;
 }
 
+/* ------------------------------------------------------------- job bar -- */
+
+/* Raised a shade above the panels and ruled off underneath, so it reads as
+   belonging to the window rather than to either column beneath it. */
+QFrame[jobBar="true"] {
+    background-color: #282c32;
+    border-bottom: 1px solid #33383f;
+}
+
+QFrame[jobBar="true"] QLabel[mono="true"] {
+    color: #3c9ae8;
+}
+
 /* ----------------------------------------------------------- accordion -- */
 
 QToolButton[accordionHeader="true"] {

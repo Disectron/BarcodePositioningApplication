@@ -4,17 +4,19 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QVBoxLayout,
     QWidget,
 )
 
 from aops.core.enums import Severity
 from aops.core.validation import Finding, ValidationReport
-from aops.ui.theme.palette import SEVERITY_COLOURS
+from aops.ui.theme.palette import OK, SEVERITY_COLOURS
 
 
 class _IssueRow(QWidget):
@@ -90,6 +92,80 @@ class IssuesPanel(QListWidget):
         path = item.data(Qt.ItemDataRole.UserRole)
         if path:
             self.findingActivated.emit(str(path))
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+class IssuesBox(QFrame):
+    """The issues list with a heading that states the count, never behind a tab.
+
+    Issues used to be the third tab of three, which meant the single most
+    important thing the application had to say - "the export is blocked, and
+    here is the reason" - was two clicks away and invisible by default. The
+    status bar carried a pill, but a pill saying "BLOCKED 2 error(s)" without
+    the errors is only slightly better than nothing.
+
+    So the list is always on screen. It sits in a splitter, so a user who wants
+    a taller preview can shrink it to just the heading - and the heading alone
+    still carries the count and the colour, which is the part that must not be
+    losable.
+    """
+
+    findingActivated = Signal(str)
+    fixRequested = Signal(object)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        self.heading = QLabel("ISSUES", self)
+        self.heading.setProperty("heading", True)
+        self.heading.setToolTip(
+            "Everything the validator found, worst first.\n\n"
+            "Double-click a line to jump to the setting that caused it; where a\n"
+            "correction is obvious there is a button that applies it, and\n"
+            "Ctrl+Z undoes that like any other edit."
+        )
+        layout.addWidget(self.heading)
+
+        self.list = IssuesPanel(self)
+        self.list.setMinimumHeight(60)
+        self.list.findingActivated.connect(self.findingActivated.emit)
+        self.list.fixRequested.connect(self.fixRequested.emit)
+        layout.addWidget(self.list, 1)
+
+    def set_report(self, report: ValidationReport) -> None:
+        self.list.set_report(report)
+
+        counts = report.counts()
+        errors = counts[Severity.ERROR] + counts[Severity.FATAL]
+        warnings = counts[Severity.WARNING]
+        notes = counts[Severity.INFO]
+
+        if errors:
+            text = f"ISSUES    {errors} blocking"
+            if warnings:
+                text += f", {_plural(warnings, 'warning')}"
+            colour = SEVERITY_COLOURS.get(
+                "FATAL" if counts[Severity.FATAL] else "ERROR"
+            )
+        elif warnings:
+            text = f"ISSUES    {_plural(warnings, 'warning')}"
+            colour = SEVERITY_COLOURS.get("WARNING")
+        elif notes:
+            # Not "none". The list below has lines in it, and a green heading
+            # saying nothing is wrong directly above them reads as a bug in the
+            # application rather than as a distinction between severities.
+            text, colour = f"ISSUES    {_plural(notes, 'note')}, none blocking", None
+        else:
+            text, colour = "ISSUES    none", OK
+
+        self.heading.setText(text)
+        self.heading.setStyleSheet(f"color: {colour};" if colour else "")
 
 
 class StatusPill(QLabel):

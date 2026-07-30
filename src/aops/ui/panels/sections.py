@@ -79,6 +79,15 @@ class SymbolPanel(ConfigPanel):
             "(10x10 vs 21x21 modules), which is why industrial position tape uses it."
         )
 
+    def load(self, cfg: AopsConfig, derived: DerivedGeometry | None) -> None:
+        super().load(cfg, derived)
+        # The two QR parameters do nothing under Data Matrix, which is the
+        # default. Left live they invite the user to set an error-correction
+        # level, watch nothing change, and conclude the setting is broken.
+        is_qr = cfg.symbol.symbology is Symbology.QR
+        for field in ("symbol.qr_ecc", "symbol.qr_version"):
+            self.set_row_enabled(field, is_qr)
+
 
 class PositionPanel(ConfigPanel):
     section = "position"

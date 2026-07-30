@@ -35,6 +35,10 @@ class AccordionSection(QWidget):
         super().__init__(parent)
         self._title = title
         self._number = number
+        #: Kept so renumbering can rebuild the header text without losing the
+        #: badge, and so a badge survives a mode switch.
+        self._severity: Severity | None = None
+        self._count = 0
 
         self.header = QToolButton(self)
         self.header.setProperty("accordionHeader", True)
@@ -93,6 +97,8 @@ class AccordionSection(QWidget):
         the rest of the session, long after the warning was resolved - so the
         panel accumulated false alarms as you worked.
         """
+        self._severity = severity
+        self._count = count
         if severity is None or severity < Severity.WARNING:
             self.header.setText(self._plain_title)
             self.header.setStyleSheet("")
@@ -105,6 +111,20 @@ class AccordionSection(QWidget):
     @property
     def _plain_title(self) -> str:
         return f"{self._number}.  {self._title.upper()}"
+
+    def number(self) -> int:
+        return self._number
+
+    def set_number(self, number: int) -> None:
+        """Change the leading number, keeping any badge.
+
+        Re-renders through `set_severity` rather than rebuilding the text here,
+        so there is one place that knows how a header is composed.
+        """
+        if number == self._number:
+            return
+        self._number = number
+        self.set_severity(self._severity, self._count)
 
     def set_visible_for_filter(self, visible: bool) -> None:
         """Hide the whole section when a filter matched nothing inside it."""
@@ -222,6 +242,22 @@ class AccordionPanel(QWidget):
             self.mode_note.setText(
                 f"{count} more match in Advanced - switch to see them."
             )
+
+    def renumber_visible(self) -> None:
+        """Number the sections that are on screen, contiguously from one.
+
+        Simple mode hides two whole sections, and with fixed numbering the panel
+        read "1, 2, 4, 6, 7..." - which invites the user to go looking for the
+        missing ones. The numbers are there to be referred to ("it's in section
+        four"), so they have to describe what is actually in front of the person
+        saying it.
+        """
+        seen = 0
+        for section in self._sections.values():
+            if section.isHidden():
+                continue
+            seen += 1
+            section.set_number(seen)
 
     def set_all_expanded(self, expanded: bool) -> None:
         for section in self._sections.values():

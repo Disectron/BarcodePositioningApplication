@@ -39,6 +39,7 @@ from aops.core.config import AopsConfig
 from aops.core.drawlist import DrawList
 from aops.core.enums import Severity
 from aops.core.errors import AopsError
+from aops.core.positions import end_index_for_travel
 from aops.core.presets import (
     BUILT_IN_PRESETS,
     Preset,
@@ -64,7 +65,8 @@ from aops.ui.dialogs.export_progress import ExportProgressDialog
 from aops.ui.panels.sections import PANEL_SPECS
 from aops.ui.settings_store import SettingsStore
 from aops.ui.widgets.accordion import AccordionPanel
-from aops.ui.widgets.issues_panel import IssuesPanel, StatusPill
+from aops.ui.widgets.issues_panel import IssuesBox, StatusPill
+from aops.ui.widgets.job_bar import JobBar
 from aops.ui.widgets.preview_view import OverviewBar, PreviewView
 from aops.ui.widgets.summary_panel import EngineeringSummary, ParameterSummary
 
@@ -156,30 +158,56 @@ class MainWindow(QMainWindow):
         self._tabs = QTabWidget(right)
         self._parameter_summary = ParameterSummary(self._tabs)
         self._engineering_summary = EngineeringSummary(self._tabs)
-        self._issues = IssuesPanel(self._tabs)
 
         for widget, title in (
             (self._parameter_summary, "Parameter summary"),
             (self._engineering_summary, "Engineering summary"),
-            (self._issues, "Issues"),
         ):
             scroll = QScrollArea(self._tabs)
             scroll.setWidget(widget)
             scroll.setWidgetResizable(True)
             self._tabs.addTab(scroll, title)
+        self._tabs.setMinimumHeight(160)
 
-        self._tabs.setMinimumHeight(220)
-        right_layout.addWidget(self._tabs, 2)
+        # Summaries are reference material and belong behind tabs. Issues are
+        # not: they are the reason the export button is greyed out, so they get
+        # permanent screen space. The splitter lets a user who wants a taller
+        # preview shrink the list to its heading, which still carries the count.
+        self._issues = IssuesBox(right)
+        lower = QSplitter(Qt.Orientation.Vertical, right)
+        lower.addWidget(self._tabs)
+        lower.addWidget(self._issues)
+        lower.setStretchFactor(0, 1)
+        lower.setStretchFactor(1, 1)
+        lower.setSizes([220, 180])
+        self._lower_splitter = lower
+        right_layout.addWidget(lower, 2)
 
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setSizes([400, 1000])
 
-        self.setCentralWidget(splitter)
+        # The job bar spans both columns: it describes the strip as a whole, so
+        # putting it inside either column would imply it belonged to one of them.
+        self._job_bar = JobBar(self)
+        self._job_bar.fieldEdited.connect(self._on_job_field)
+        self._job_bar.travelRequested.connect(self._on_travel_requested)
+
+        central = QWidget(self)
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self._job_bar)
+        central_layout.addWidget(splitter, 1)
+
+        self.setCentralWidget(central)
 
     def _build_toolbar(self) -> None:
         bar = QToolBar("Main", self)
+        # saveState() identifies toolbars by object name and warns without one,
+        # which meant the toolbar was never actually part of the restored state.
+        bar.setObjectName("mainToolBar")
         bar.setMovable(False)
         bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.addToolBar(bar)
@@ -261,6 +289,36 @@ class MainWindow(QMainWindow):
         self._issues.findingActivated.connect(self._focus_field)
         self._issues.fixRequested.connect(self._apply_fix)
 
+    # -- job bar ------------------------------------------------------------
+
+    @Slot(str, str)
+    def _on_job_field(self, path: str, value: str) -> None:
+        """Edit made in the job bar rather than in section 10."""
+        section, name = path.split(".", 1)
+        self._store.update_section(section, **{name: value})
+
+    @Slot(float)
+    def _on_travel_requested(self, travel: float) -> None:
+        """Turn an axis length into an index range.
+
+        The conversion needs the resolved cell, so it needs the derived geometry.
+        When the geometry is unresolved there is nothing sensible to compute -
+        the pitch itself may be the thing that is wrong - so the request is
+        dropped rather than guessed at.
+        """
+        derived = self._controller.derived
+        if derived is None:
+            return
+        pos = self._store.config.position
+        end = end_index_for_travel(travel, pos, derived.cell)
+        if end != pos.end_index:
+            self._store.update_section("position", end_index=end)
+        else:
+            # No change to commit, so no configChanged to refresh the bar - but
+            # the box may hold a number the range does not achieve, and leaving
+            # it there would misreport the strip.
+            self._job_bar.update_from(self._store.config, derived)
+
     # -- controller signals -------------------------------------------------
 
     @Slot(object)
@@ -278,6 +336,7 @@ class MainWindow(QMainWindow):
             panel.refresh(cfg, derived)
         self._parameter_summary.update_from(cfg, derived, self._controller.fingerprint)
         self._engineering_summary.update_from(cfg, derived)
+        self._job_bar.update_from(cfg, derived)
 
         if derived is not None:
             self._status_pages.setText(
@@ -294,6 +353,7 @@ class MainWindow(QMainWindow):
 
         for panel in self._panels.values():
             panel.apply_validation(report)
+        self._job_bar.apply_validation(report)
 
         # Badge a header from the fields its own panel actually shows, not from
         # the config section it is named after. Design edits output.* and
@@ -458,6 +518,7 @@ class MainWindow(QMainWindow):
             if needle.strip():
                 section.set_expanded(shown > 0)
 
+        self._accordion.renumber_visible()
         self._accordion.show_mode(self._mode, self._hidden_field_count())
 
         # A search that matches only hidden fields would otherwise look like the
@@ -517,8 +578,13 @@ class MainWindow(QMainWindow):
 
         Switches to Advanced first if the field is not in the Simple set,
         otherwise activating a blocking finding from Simple mode would appear to
-        do nothing at all.
+        do nothing at all. The job bar is checked before that, because switching
+        modes to reach a box that was on screen the whole time would be worse
+        than not switching at all.
         """
+        if self._job_bar.focus_field(path):
+            return
+
         if not visible_at(path, self._mode):
             self._set_mode(UiLevel.ADVANCED)
 

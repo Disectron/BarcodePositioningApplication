@@ -61,9 +61,11 @@ class UiLevel(IntEnum):
 #: it go on, what reads it.
 SIMPLE_FIELDS: Final[frozenset[str]] = frozenset(
     {
-        # -- what strip is this -------------------------------------------
-        "project.machine",
-        "project.strip_id",
+        # `project.machine` and `project.strip_id` are deliberately absent:
+        # the job bar carries them permanently at the top of the window, in both
+        # modes, so listing them here would make Simple mode's section 10 a
+        # duplicate of something already on screen. `JOB_BAR_FIELDS` records
+        # that they are still reachable.
         # -- how long, and how precisely -----------------------------------
         "position.end_index",
         "dimensions.pitch_mm",
@@ -88,11 +90,37 @@ SIMPLE_FIELDS: Final[frozenset[str]] = frozenset(
 )
 
 
+#: Fields the job bar carries outside the accordion, visible in both modes.
+#:
+#: Kept here rather than only in the widget because the closure property is
+#: about what a Simple-mode user can *reach*, not about which container it sits
+#: in. A field on the job bar is as reachable as one in the Simple set.
+JOB_BAR_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "project.machine",
+        "project.strip_id",
+    }
+)
+
+#: Everything a Simple-mode user can see and edit, wherever it lives.
+REACHABLE_IN_SIMPLE: Final[frozenset[str]] = SIMPLE_FIELDS | JOB_BAR_FIELDS
+
+
 def level_for(path: str) -> UiLevel:
     """Which mode a field belongs to."""
     return UiLevel.SIMPLE if path in SIMPLE_FIELDS else UiLevel.ADVANCED
 
 
 def visible_at(path: str, mode: UiLevel) -> bool:
-    """True when a field should be shown in `mode`."""
+    """True when a field should be shown in `mode`.
+
+    Answers the question for accordion rows. Job-bar fields are always on show,
+    so `always_reachable` is what a caller deciding whether to switch modes
+    should ask instead.
+    """
     return mode is UiLevel.ADVANCED or path in SIMPLE_FIELDS
+
+
+def always_reachable(path: str) -> bool:
+    """True when a field is on screen regardless of mode."""
+    return path in JOB_BAR_FIELDS
