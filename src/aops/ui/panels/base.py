@@ -30,6 +30,7 @@ from aops.controller.config_store import ConfigStore
 from aops.core.config import AopsConfig
 from aops.core.stats import DerivedGeometry
 from aops.core.validation import ValidationReport
+from aops.resources.field_levels import UiLevel, visible_at
 from aops.resources.glossary import hint_for
 from aops.ui.widgets.field_row import COMBO_VALUES, FieldRow, connect_editor
 
@@ -44,6 +45,10 @@ class ConfigPanel(QWidget):
         self._store = store
         self._rows: dict[str, FieldRow] = {}
         self._loading = False
+        #: Current filter text and mode, so either can be changed independently
+        #: without the other being forgotten.
+        self._filter = ""
+        self._mode = UiLevel.ADVANCED
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -144,27 +149,48 @@ class ConfigPanel(QWidget):
         return True
 
     def apply_filter(self, needle: str) -> int:
-        """Show only rows matching `needle`. Returns how many survived.
+        """Show only rows matching `needle`, within the current mode."""
+        return self.refresh_visibility(needle, self._mode)
+
+    def apply_level(self, mode: UiLevel) -> int:
+        """Show only rows belonging to `mode`, honouring any active filter."""
+        return self.refresh_visibility(self._filter, mode)
+
+    def refresh_visibility(self, needle: str, mode: UiLevel) -> int:
+        """Show rows that both match the filter and belong to the mode.
+
+        The two constraints compose rather than override: filtering inside
+        Simple mode searches what Simple mode shows, which is what a user who
+        chose Simple would expect. Returns how many rows survived.
 
         Non-row widgets (notes, buttons, readouts) are hidden while a filter is
-        active: leaving a stray "Apply measurement" button under three matched
-        rows reads as though it belongs to them.
+        active - leaving a stray "Apply measurement" button under three matched
+        rows reads as though it belongs to them - and in Simple mode they follow
+        the section, since a section with nothing left to show should show
+        nothing at all.
         """
-        needle = needle.strip().lower()
+        self._filter = needle = needle.strip().lower()
+        self._mode = mode
+
         matches = 0
-        for row in self._rows.values():
-            visible = row.matches(needle)
+        for path, row in self._rows.items():
+            visible = row.matches(needle) and visible_at(path, mode)
             row.setVisible(visible)
             matches += int(visible)
 
         bound = set(self._rows.values())
+        extras_visible = not needle and matches > 0
         for i in range(self._layout.count()):
             item = self._layout.itemAt(i)
             widget = item.widget() if item is not None else None
             if widget is not None and widget not in bound:
-                widget.setVisible(not needle)
+                widget.setVisible(extras_visible)
 
         return matches
+
+    def simple_row_count(self) -> int:
+        """How many of this panel's rows Simple mode shows."""
+        return sum(1 for path in self._rows if visible_at(path, UiLevel.SIMPLE))
 
     def rows(self) -> dict[str, FieldRow]:
         return dict(self._rows)
