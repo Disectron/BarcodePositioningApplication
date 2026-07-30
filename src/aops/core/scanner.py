@@ -32,7 +32,7 @@ rises to 85 mm. Choosing N also buys a stated occlusion tolerance of
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, radians
+from math import cos, radians, tan
 
 from aops.core.cell import CellSpec
 from aops.core.config import ScannerConfig
@@ -51,6 +51,20 @@ class ScannerRecommendation:
     working_distances: tuple[tuple[float, float], ...]  # (focal_mm, wd_mm)
     mount_height_mm: float
     notes: tuple[str, ...]
+    #: Distance a reader of stated angular field of view must sit at to see
+    #: `fov_continuous_mm`. Zero when no reader spec has been entered.
+    required_wd_mm: float = 0.0
+    #: Height of that reader's view at `required_wd_mm`. The code and both its
+    #: quiet zones have to fit inside it, which is easy to overlook because the
+    #: interesting constraint is nearly always the horizontal one.
+    vertical_fov_mm: float = 0.0
+    #: Pixels the stated sensor actually puts across one module at that
+    #: distance, against `px_per_module` as the target.
+    available_px_per_module: float = 0.0
+
+    @property
+    def has_reader_spec(self) -> bool:
+        return self.required_wd_mm > 0.0
 
 
 def _sensor_class(px: int) -> str:
@@ -98,6 +112,21 @@ def recommend(
     mid_wd = working[len(working) // 2][1] if working else 0.0
     mount_height = mid_wd * cos(radians(cfg.mount_tilt_deg))
 
+    # With a stated angular field of view the mounting distance is exact rather
+    # than estimated: a view of angle t is (2 tan(t/2)) wide per unit distance,
+    # so the distance needed to span the required width follows directly.
+    required_wd = 0.0
+    vertical_fov = 0.0
+    available_px = 0.0
+    if cfg.has_reader_spec:
+        spread = 2.0 * tan(radians(cfg.fov_angle_deg / 2.0))
+        if spread > 0:
+            required_wd = fov_continuous / spread
+        if cfg.fov_vertical_deg > 0:
+            vertical_fov = required_wd * 2.0 * tan(radians(cfg.fov_vertical_deg / 2.0))
+        if cfg.sensor_px_h > 0 and fov_continuous > 0:
+            available_px = cfg.sensor_px_h / fov_continuous * module_mm
+
     notes = (
         f"Assumes {cfg.px_per_module:.1f} pixels per module.",
         f"Assumes a {cfg.sensor_width_mm:.1f} mm wide sensor.",
@@ -118,4 +147,7 @@ def recommend(
         working_distances=tuple(working),
         mount_height_mm=mount_height,
         notes=notes,
+        required_wd_mm=required_wd,
+        vertical_fov_mm=vertical_fov,
+        available_px_per_module=available_px,
     )

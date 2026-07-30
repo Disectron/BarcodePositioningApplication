@@ -319,5 +319,70 @@ GENERAL_PRESETS: Final[tuple[Preset, ...]] = (
 )
 
 
+
+
+#: Menu group holding reader-specific optics.
+READER_GROUP: Final[str] = "Reader"
+
+
+def _reader_preset(
+    name: str,
+    summary: str,
+    *,
+    source: str,
+    fov_h_deg: float,
+    fov_v_deg: float,
+    dof_min_mm: float,
+    dof_max_mm: float,
+    sensor_px_h: int,
+    codes_in_view: int = 1,
+) -> Preset:
+    """One reader, from its published specification.
+
+    `source` is required, not optional. These are the only vendor figures in
+    the project, and the module they feed states plainly that it invents none -
+    so every one of them has to be traceable to the page it came from and
+    checkable against the datasheet of the unit actually bought. Every value
+    stays user-editable afterwards.
+
+    To add a reader, add a call below. Nothing else needs changing: it appears
+    in the Presets menu under its group, and the validation rules will report
+    whether it can cover the configured geometry.
+    """
+    return _built_in(
+        name,
+        f"{summary}\n\nFigures from {source}. Confirm against the datasheet of "
+        f"the unit you buy.",
+        group=READER_GROUP,
+        scanner={
+            "fov_angle_deg": fov_h_deg,
+            "fov_vertical_deg": fov_v_deg,
+            "dof_min_mm": dof_min_mm,
+            "dof_max_mm": dof_max_mm,
+            "sensor_px_h": sensor_px_h,
+            "min_codes_in_view": codes_in_view,
+        },
+    )
+
+
+READER_PRESETS: Final[tuple[Preset, ...]] = (
+    _reader_preset(
+        "Newland NLS-NVF230-SR",
+        "1280 x 800 sensor, 48.5 x 30.7 degree view, focuses 50-200 mm. A "
+        "general-purpose fixed scanner: it reads one code at a time, so "
+        "position steps in whole spacings and one damaged code loses it until "
+        "the next",
+        source="newlandaidc.com NVF230 product page",
+        fov_h_deg=48.5,
+        fov_v_deg=30.7,
+        dof_min_mm=50.0,
+        dof_max_mm=200.0,
+        sensor_px_h=1280,
+    ),
+)
+
+
 #: Everything offered in the Presets menu.
-BUILT_IN_PRESETS: Final[tuple[Preset, ...]] = GENERAL_PRESETS + SIZE_PRESETS
+BUILT_IN_PRESETS: Final[tuple[Preset, ...]] = (
+    GENERAL_PRESETS + SIZE_PRESETS + READER_PRESETS
+)

@@ -836,6 +836,66 @@ def scn_sensor(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fin
 # --------------------------------------------------------------------------
 
 
+def scn_reader_fit(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """Whether the reader you actually chose can see this strip.
+
+    Only runs once a real reader's angular field of view has been entered.
+    Until then the generic lens estimate stands and there is nothing to check
+    against.
+    """
+    if derived is None or not cfg.scanner.has_reader_spec:
+        return
+    rec = derived.scanner
+    scn = cfg.scanner
+    wd = rec.required_wd_mm
+
+    if scn.dof_max_mm > 0 and wd > scn.dof_max_mm:
+        yield _f("SCN-003", Severity.ERROR,
+                 f"Seeing {rec.fov_continuous_mm:.0f} mm at once needs the reader "
+                 f"{wd:.0f} mm away, beyond its {scn.dof_min_mm:.0f}-{scn.dof_max_mm:.0f} mm "
+                 f"focus range. It cannot cover a full pitch plus a code from anywhere "
+                 f"it can focus, so there will be blind spots.",
+                 "scanner.fov_angle_deg",
+                 "Reduce the pitch or the code size, or choose a reader with a wider "
+                 "field of view.")
+    elif scn.dof_min_mm > 0 and wd < scn.dof_min_mm:
+        yield _f("SCN-004", Severity.INFO,
+                 f"The required {rec.fov_continuous_mm:.0f} mm view is reached at "
+                 f"{wd:.0f} mm, closer than the reader's {scn.dof_min_mm:.0f} mm minimum. "
+                 f"Mount at {scn.dof_min_mm:.0f} mm or more - the view is only wider "
+                 f"there, which is harmless.",
+                 "scanner.dof_min_mm")
+
+    # Vertical is the constraint people forget: the horizontal view is the one
+    # the strip geometry drives, but the code still has to fit top to bottom.
+    if rec.vertical_fov_mm > 0:
+        needed_v = derived.cell.symbol_mm + 2 * derived.cell.quiet_zone_mm
+        effective_wd = max(wd, scn.dof_min_mm) if scn.dof_min_mm > 0 else wd
+        v_at = rec.vertical_fov_mm / wd * effective_wd if wd > 0 else 0.0
+        if v_at < needed_v:
+            yield _f("SCN-005", Severity.ERROR,
+                     f"At {effective_wd:.0f} mm the reader sees {v_at:.0f} mm vertically, "
+                     f"but the code plus its clear borders is {needed_v:.0f} mm tall.",
+                     "scanner.fov_vertical_deg",
+                     "Reduce the code size, or choose a reader with a taller field of view.")
+
+    if rec.available_px_per_module > 0 and rec.available_px_per_module < cfg.scanner.px_per_module:
+        yield _f("SCN-006", Severity.WARNING,
+                 f"The reader puts {rec.available_px_per_module:.1f} pixels across one "
+                 f"module, short of the {cfg.scanner.px_per_module:.1f} target.",
+                 "scanner.sensor_px_h",
+                 "Increase the code size, reduce the pitch, or choose a higher-resolution "
+                 "reader.")
+
+    if cfg.scanner.min_codes_in_view <= 1:
+        yield _f("SCN-007", Severity.INFO,
+                 "Reading one code at a time gives no damage tolerance: a single "
+                 "obscured or scratched code loses position until the next one is "
+                 "reached. Dedicated position readers see several at once for exactly "
+                 "this reason.",
+                 "scanner.min_codes_in_view")
+
+
 def prj_metadata(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     p = cfg.project
     if not p.strip_id.strip():
@@ -890,5 +950,6 @@ ALL_RULES: tuple[Rule, ...] = (
     med_process,
     scn_fov,
     scn_sensor,
+    scn_reader_fit,
     prj_metadata,
 )

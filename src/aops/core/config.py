@@ -269,6 +269,24 @@ class ScannerConfig:
     focal_lengths_mm: tuple[float, ...] = (6.0, 8.0, 12.0, 16.0, 25.0)
     mount_tilt_deg: float = 12.0  # tilt away from specular return
 
+    #: Figures from a specific reader's datasheet. All default to 0 meaning
+    #: "not stated", which leaves the generic lens estimate above in charge.
+    #: Filling them in replaces the estimate with the real thing: a datasheet
+    #: quotes an angular field of view, from which the mounting distance
+    #: follows exactly, rather than being inferred from an assumed sensor size.
+    fov_angle_deg: float = 0.0
+    fov_vertical_deg: float = 0.0
+    #: The reader's focus window - the range over which it can resolve at all.
+    dof_min_mm: float = 0.0
+    dof_max_mm: float = 0.0
+    #: Pixels across the sensor's long axis.
+    sensor_px_h: int = 0
+
+    @property
+    def has_reader_spec(self) -> bool:
+        """True once a real reader's field of view has been entered."""
+        return self.fov_angle_deg > 0.0
+
 
 @dataclass(frozen=True, slots=True)
 class ProjectConfig:

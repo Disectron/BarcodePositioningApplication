@@ -671,12 +671,50 @@ class ScannerPanel(ConfigPanel):
             "and absolute position is lost."
         )
 
+        for field, label, maximum, suffix in (
+            ("fov_angle_deg", "View angle across", 170.0, "deg"),
+            ("fov_vertical_deg", "View angle down", 170.0, "deg"),
+            ("dof_min_mm", "Focuses from", 10000.0, "mm"),
+            ("dof_max_mm", "Focuses to", 10000.0, "mm"),
+        ):
+            self.add_row(
+                field, label,
+                make_double(getattr(cfg.scanner, field), minimum=0.0, maximum=maximum,
+                            step=1.0, decimals=1),
+                suffix=suffix,
+            )
+        self.add_row(
+            "sensor_px_h", "Sensor pixels across",
+            make_int(cfg.scanner.sensor_px_h, minimum=0, maximum=20000, step=64),
+        )
+
+        self.mount = make_readonly("")
+        self.add_readout("Mount this far away", self.mount, suffix="mm")
+        self.add_note(
+            "Fill in your reader's datasheet figures and the mounting distance "
+            "becomes exact rather than estimated - and the tool can tell you "
+            "whether that distance is one it can actually focus at."
+        )
+
     def load(self, cfg: AopsConfig, derived: DerivedGeometry | None) -> None:
         super().load(cfg, derived)
-        if derived is not None:
-            self.fov.setText(f"{derived.scanner.fov_continuous_mm:.1f}")
-        else:
+        if derived is None:
             self.fov.setText("-")
+            self.mount.setText("-")
+            return
+
+        rec = derived.scanner
+        self.fov.setText(f"{rec.fov_continuous_mm:.1f}")
+        if not rec.has_reader_spec:
+            self.mount.setText("- (enter a view angle)")
+        else:
+            # Below the near focus limit the view is only wider, which is safe;
+            # say so rather than quoting a distance the reader cannot focus at.
+            floor = cfg.scanner.dof_min_mm
+            if floor > 0 and rec.required_wd_mm < floor:
+                self.mount.setText(f"{floor:.0f} or more (nearest focus)")
+            else:
+                self.mount.setText(f"{rec.required_wd_mm:.0f}")
 
 
 class ProjectPanel(ConfigPanel):

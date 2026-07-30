@@ -527,6 +527,34 @@ FIELD_HINTS: dict[str, str] = {
         "About 5 is the usual industrial target. This is what turns your "
         "geometry into a sensor resolution you can specify when buying."
     ),
+    "scanner.fov_angle_deg": (
+        "How wide an angle your reader sees, from its datasheet.\n\n"
+        "This is the most useful number a reader datasheet gives you. With it "
+        "the mounting distance is exact rather than estimated from an assumed "
+        "lens and sensor. Leave at 0 to keep the generic estimate."
+    ),
+    "scanner.fov_vertical_deg": (
+        "How tall an angle your reader sees.\n\n"
+        "Easy to overlook, because the strip geometry drives the horizontal "
+        "requirement - but the code and its clear borders still have to fit "
+        "top to bottom at whatever distance the horizontal view dictates."
+    ),
+    "scanner.dof_min_mm": (
+        "Closest distance your reader can focus at.\n\n"
+        "If the required view is reached nearer than this, mount at this "
+        "distance instead - the view is only wider there, which is harmless."
+    ),
+    "scanner.dof_max_mm": (
+        "Furthest distance your reader can focus at.\n\n"
+        "If covering a full spacing plus one code needs more distance than "
+        "this, the reader cannot do it from anywhere it can focus, and there "
+        "will be blind spots. That is a hard error, not a warning."
+    ),
+    "scanner.sensor_px_h": (
+        "Pixels across your reader's sensor, from its datasheet.\n\n"
+        "Used to check how many pixels actually land on one module at the "
+        "required distance, against the target above. Leave at 0 if unknown."
+    ),
     # -- 11. project -------------------------------------------------------
     "project.machine": (
         "Which machine this strip is for. Printed on every sheet, so a strip "

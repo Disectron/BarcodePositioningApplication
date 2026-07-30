@@ -142,6 +142,28 @@ preset's description states its own figures — generated from the values, so th
 from what it sets. The size presets touch geometry only, so they leave your media, paper and printer
 settings alone.
 
+### Readers
+
+A **Reader** submenu fills in a specific scanner's published optics. A datasheet quotes an *angular*
+field of view, and from that the mounting distance follows exactly rather than being inferred from an
+assumed sensor and lens:
+
+```
+distance = required view width / (2 · tan(angle / 2))
+```
+
+The focus window then decides whether that distance is usable. This catches a failure that is
+otherwise silent: a reader that decodes a code perfectly on the bench but **cannot cover a whole
+spacing plus one code from any distance it can focus at**, so the machine has blind spots where
+position is lost (`SCN-003`, a hard error). `SCN-005` checks the code still fits the *vertical* view
+at whatever distance the horizontal requirement dictates — easy to overlook, since the strip geometry
+only drives the horizontal one.
+
+Currently shipped: **Newland NLS-NVF230-SR**. Adding another is one call to `_reader_preset()` in
+`core/presets.py`, which **requires a `source`** — these are the only vendor figures in the project,
+and `core/scanner.py` states plainly that it invents none, so each has to be traceable to the page it
+came from and checkable against the unit actually bought. Every value stays user-editable.
+
 ### General presets
 
 Three more ship with the tool, each encoding a recommendation this README argues for elsewhere:
