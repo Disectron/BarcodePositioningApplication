@@ -41,6 +41,8 @@ KNOWN_SUFFIXES = (
     "_per_module",
     "_deg_c",
     "_ppm_per_c",
+    "_mm_per_s",
+    "_ms",
 )
 
 

@@ -28,6 +28,7 @@ from aops.core.enums import (
     TapeMounting,
     VerifyMode,
 )
+from aops.core.motion import frames_on_a_code, motion_limits
 from aops.core.stats import DerivedGeometry
 from aops.symbols.placeholders import PLACEHOLDER_REASONS
 from aops.ui.panels.base import ConfigPanel, enum_items
@@ -721,6 +722,72 @@ class ScannerPanel(ConfigPanel):
             "much window there is, and the geometry has to fit inside it."
         )
 
+        # -- reading while the axis moves ----------------------------------
+        self.add_row(
+            "axis_speed_mm_per_s", "Axis speed",
+            make_double(cfg.scanner.axis_speed_mm_per_s, minimum=0.0, maximum=100000.0,
+                        step=50.0, decimals=0),
+            suffix="mm/s",
+            tooltip=(
+                "How fast the axis travels while the reader is working.\n\n"
+                "Leave at 0 if the strip is only read standing still - the motion "
+                "checks switch off entirely rather than quoting a speed limit for a "
+                "machine that has no speed.\n\n"
+                "Enter a speed and two things get checked that the geometry alone "
+                "cannot tell you: whether the image smears further than one module "
+                "during the exposure, and whether a code stays in the window long "
+                "enough for the camera to catch a frame of it."
+            ),
+        )
+        self.add_row(
+            "exposure_us", "Reader exposure",
+            make_int(cfg.scanner.exposure_us, minimum=0, maximum=60000, step=50),
+            suffix="us",
+            tooltip=(
+                "How long the reader's shutter stays open, in microseconds.\n\n"
+                "This is the number that decides how fast you can go. The code "
+                "travels while the shutter is open, and the image smears by that "
+                "distance - so a 1.000 mm module at the NVF230's default 1000 us "
+                "tolerates 1.0 m/s and no more.\n\n"
+                "Shortening it buys speed but needs more light or more gain to stay "
+                "bright enough to decode. The NVF230 accepts 60 to 60000 us."
+            ),
+        )
+        self.add_row(
+            "frames_per_code", "Frames per code",
+            make_int(cfg.scanner.frames_per_code, minimum=1, maximum=16),
+            tooltip=(
+                "How many camera frames must catch each code before the read is "
+                "trusted.\n\n"
+                "One is the bare minimum and no redundancy at all - a single dropped "
+                "frame is a lost code. Two or three is what makes it reliable, and it "
+                "costs speed in direct proportion."
+            ),
+        )
+        self.add_row(
+            "frame_interval_ms", "Frame interval",
+            make_double(cfg.scanner.frame_interval_ms, minimum=1.0, maximum=1000.0,
+                        step=1.0, decimals=1),
+            suffix="ms",
+            tooltip=(
+                "Time between the reader's captures. 20 ms means 50 frames a "
+                "second, which is the NVF230's rate.\n\n"
+                "Together with the window width this sets the hard speed ceiling: a "
+                "code that crosses the field of view in less than one interval can "
+                "pass through without any frame catching it, however sharp the image "
+                "would have been."
+            ),
+        )
+        self.speed_limit = make_readonly("")
+        self.add_readout("Speed limit", self.speed_limit, suffix="mm/s")
+        self.smear = make_readonly("")
+        self.add_readout("Smear at that speed", self.smear)
+        self.add_note(
+            "Module size is a motion decision as well as a printing one: the "
+            "tolerable speed scales directly with it. Doubling the code size "
+            "doubles how fast the axis can run."
+        )
+
     def _fit_to_distance(self) -> None:
         """Widen or narrow the spacing to use the window exactly."""
         derived = self._derived
@@ -773,6 +840,36 @@ class ScannerPanel(ConfigPanel):
             self.window.setText("- (set a mounting distance)")
             self.budget.setText("-")
             self.fit_button.setEnabled(False)
+
+        self._show_motion(cfg, derived)
+
+    def _show_motion(self, cfg: AopsConfig, derived: DerivedGeometry) -> None:
+        """Report the speed ceiling and what the stated speed spends against it."""
+        limits = motion_limits(
+            module_mm=derived.cell.module_mm(derived.matrix_cols),
+            fov_mm=derived.scanner.available_fov_mm or derived.scanner.fov_continuous_mm,
+            exposure_us=cfg.scanner.exposure_us,
+            frames_wanted=cfg.scanner.frames_per_code,
+            frame_interval_ms=cfg.scanner.frame_interval_ms,
+            requested_speed_mm_per_s=cfg.scanner.axis_speed_mm_per_s,
+        )
+        top = limits.max_speed_mm_per_s
+        if top <= 0.0:
+            self.speed_limit.setText("-")
+            self.smear.setText("-")
+            return
+
+        self.speed_limit.setText(f"{top:.0f}   (set by the {limits.limited_by})")
+        if not limits.is_specified:
+            self.smear.setText("- (enter an axis speed)")
+            return
+
+        verdict = "fits" if limits.fits else "too fast"
+        self.smear.setText(
+            f"{limits.smear_mm:.3f} mm = {limits.smear_modules:.1f} modules, "
+            f"{frames_on_a_code(limits.fov_mm, limits.requested_speed_mm_per_s, cfg.scanner.frame_interval_ms):.1f}"
+            f" frames per code - {verdict}"
+        )
 
 
 class ProjectPanel(ConfigPanel):

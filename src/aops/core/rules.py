@@ -25,6 +25,7 @@ from collections.abc import Iterable
 from aops.core.cell import GENEROUS_MODULE_UM, MIN_MODULE_UM, resolve_cell
 from aops.core.config import AopsConfig
 from aops.core.design import detect_style
+from aops.core.dotgrid import fit_to_dot_grid
 from aops.core.enums import (
     ContinuousStrategy,
     LrMarginMode,
@@ -39,6 +40,7 @@ from aops.core.enums import (
 )
 from aops.core.errors import GeometryError
 from aops.core.layout.bands import solve_bands
+from aops.core.motion import EXPOSURE_MIN_US, frames_on_a_code, motion_limits
 from aops.core.stats import DerivedGeometry
 from aops.core.units import PDF_MAX_PT, PDF_MAX_USER_UNIT, mm_per_dot
 from aops.core.validation import Finding, Fix, Rule
@@ -650,6 +652,66 @@ def prn_module_dots(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterabl
                  "printer.dpi")
 
 
+def prn_dot_grid(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """Whether a module is a whole number of printer dots.
+
+    Distinct from PRN-005/006, which ask whether a module is *big enough* in
+    dots. A module can be a comfortable 11.8 dots and still print badly, because
+    the rasteriser rounds every boundary to a dot and the modules come out
+    alternating 11 and 12 dots wide. That is the defect this rule finds.
+    """
+    if derived is None or cfg.printer.dpi <= 0:
+        return
+
+    cell = derived.cell
+    fit = fit_to_dot_grid(
+        cell.symbol_mm,
+        derived.matrix_cols,
+        cfg.printer.dpi,
+        # The splice guarantee. Growing the symbol past this would trade a
+        # printing defect for a strip that cannot be cut safely.
+        max_symbol_mm=cell.pitch_mm - 2.0 * cell.quiet_zone_mm,
+        min_module_mm=MIN_MODULE_UM / 1000.0,
+    )
+    if fit.is_on_grid or fit.module_dots <= 0.0:
+        return
+
+    # Graded by magnitude, not flat. One dot of rounding on twenty-four is a 4%
+    # effect and 0.02 of a module off grid - real, free to fix, and nowhere near
+    # the dominant defect. The same one dot on four is 25%, and that is a
+    # different conversation. Warning for both would spend the credibility the
+    # second case needs.
+    severity = Severity.WARNING if fit.is_notable else Severity.INFO
+
+    message = (
+        f"One module is {fit.module_dots:.3f} printer dots at {cfg.printer.dpi} dpi, "
+        f"not a whole number. Module edges round to the dot grid, so printed "
+        f"modules alternate between {int(fit.module_dots)} and {int(fit.module_dots) + 1} "
+        f"dots - a {fit.module_variation_percent:.1f}% spread in width, with edges up to "
+        f"{fit.grid_deviation_mm:.3f} mm off the ideal grid."
+    )
+
+    if not fit.has_fix:
+        yield _f("PRN-010", severity, message, "dimensions.symbol_size_mm",
+                 "No whole-dot code size fits this pitch and quiet zone. Change the "
+                 "pitch, or print at a resolution whose dot divides the module.")
+        return
+
+    hint = (
+        f"A code of {fit.snapped_symbol_mm:.3f} mm makes every module exactly "
+        f"{fit.snapped_dots} dots, removing the variation entirely - "
+        f"{fit.size_change_mm:+.3f} mm on the code size."
+    )
+    if fit.snapped_down:
+        hint += (
+            " Snapped down rather than up: the next whole dot upwards would leave "
+            "the symbol too wide for its quiet zones to fit inside the pitch."
+        )
+
+    yield _f("PRN-010", severity, message, "dimensions.symbol_size_mm", hint,
+             _mm_fix("dimensions.symbol_size_mm", fit.snapped_symbol_mm, "code size"))
+
+
 def prn_splice_error(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     """Surface the cumulative-vs-bounded error difference."""
     if derived is None or not cfg.output.tiled_pages or len(derived.pages) < 2:
@@ -977,6 +1039,92 @@ def scn_fixed_distance(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iter
                      "Mount further back, or reduce the code size.")
 
 
+def scn_motion(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """Whether the strip can be read at the speed the axis actually moves.
+
+    Silent until an axis speed is entered: reporting a speed limit for a machine
+    that has not stated a speed would be noise on every project that reads the
+    tape standing still.
+
+    Two independent ceilings, both from the reader's own documentation - see
+    `core.motion`. They fail in different ways, which is why they are separate
+    findings rather than one: too much blur gives a degraded image that
+    sometimes decodes, too few frames means the code is never seen at all.
+    """
+    if derived is None:
+        return
+    scn = cfg.scanner
+    if not scn.reads_in_motion:
+        return
+
+    module_mm = derived.cell.module_mm(derived.matrix_cols)
+    limits = motion_limits(
+        module_mm=module_mm,
+        fov_mm=derived.scanner.available_fov_mm or derived.scanner.fov_continuous_mm,
+        exposure_us=scn.exposure_us,
+        frames_wanted=scn.frames_per_code,
+        frame_interval_ms=scn.frame_interval_ms,
+        requested_speed_mm_per_s=scn.axis_speed_mm_per_s,
+    )
+    speed = scn.axis_speed_mm_per_s
+
+    if limits.blur_speed_mm_per_s > 0.0 and speed > limits.blur_speed_mm_per_s:
+        needed = limits.exposure_needed_us
+        if needed >= EXPOSURE_MIN_US:
+            remedy = (
+                f"Set the reader's exposure to {needed:.0f} us or less. It will need "
+                f"more light or more gain to stay bright enough."
+            )
+            fix: Fix | None = Fix(
+                field="scanner.exposure_us",
+                value=int(needed),
+                label=f"Set exposure to {needed:.0f} us",
+            )
+        else:
+            bigger = module_mm * EXPOSURE_MIN_US / needed if needed > 0 else 0.0
+            remedy = (
+                f"No exposure this reader accepts is short enough - its floor is "
+                f"{EXPOSURE_MIN_US} us. Enlarge the code so one module is at least "
+                f"{bigger:.3f} mm, or slow the axis."
+            )
+            fix = None
+        yield _f("SCN-012", Severity.WARNING,
+                 f"At {speed:.0f} mm/s the code travels {limits.smear_mm:.3f} mm during "
+                 f"the {scn.exposure_us} us exposure - {limits.smear_modules:.1f} modules "
+                 f"of smear. Above one module the image blurs faster than the reader can "
+                 f"be relied on to decode; this geometry tolerates "
+                 f"{limits.blur_speed_mm_per_s:.0f} mm/s.",
+                 "scanner.axis_speed_mm_per_s", remedy, fix)
+
+    if limits.frame_speed_mm_per_s > 0.0 and speed > limits.frame_speed_mm_per_s:
+        caught = frames_on_a_code(
+            limits.fov_mm, speed, scn.frame_interval_ms
+        )
+        severity = Severity.ERROR if caught < 1.0 else Severity.WARNING
+        detail = (
+            "A code can cross the window without a single frame catching it, so "
+            "position is lost at random."
+            if caught < 1.0
+            else f"Every code is caught, but only {caught:.1f} times - a single dropped "
+            f"frame loses it."
+        )
+        yield _f("SCN-013", severity,
+                 f"At {speed:.0f} mm/s a code is in the reader's {limits.fov_mm:.0f} mm "
+                 f"window for {limits.fov_mm / speed * 1000.0:.1f} ms, which is "
+                 f"{caught:.1f} frames at one per {scn.frame_interval_ms:.0f} ms. "
+                 f"{detail}",
+                 "scanner.axis_speed_mm_per_s",
+                 f"Slow to {limits.frame_speed_mm_per_s:.0f} mm/s, widen the window by "
+                 f"mounting further back, or accept fewer frames per code.")
+
+    if limits.fits and limits.headroom > 0.0:
+        yield _f("SCN-014", Severity.INFO,
+                 f"Reads while moving: {speed:.0f} mm/s against a limit of "
+                 f"{limits.max_speed_mm_per_s:.0f} mm/s, set by the "
+                 f"{limits.limited_by}. {limits.headroom:.1f}x margin.",
+                 "scanner.axis_speed_mm_per_s")
+
+
 def prj_metadata(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     p = cfg.project
     if not p.strip_id.strip():
@@ -1023,6 +1171,7 @@ ALL_RULES: tuple[Rule, ...] = (
     prn_scaling,
     prn_calibration,
     prn_module_dots,
+    prn_dot_grid,
     prn_splice_error,
     med_paper,
     med_drift,
@@ -1033,5 +1182,6 @@ ALL_RULES: tuple[Rule, ...] = (
     scn_sensor,
     scn_reader_fit,
     scn_fixed_distance,
+    scn_motion,
     prj_metadata,
 )

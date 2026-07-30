@@ -293,6 +293,26 @@ class ScannerConfig:
     #: that budget rather than dictate it.
     mount_distance_mm: float = 0.0
 
+    #: --- reading while the axis moves -------------------------------------
+    #: How fast the axis actually travels. Zero means the strip is only read
+    #: standing still, which switches the motion checks off entirely - they
+    #: would otherwise report a speed limit for a machine that has no speed.
+    axis_speed_mm_per_s: float = 0.0
+    #: Reader exposure. Sets how far the code travels while the shutter is open,
+    #: and therefore how much the image smears.
+    exposure_us: int = 1000
+    #: Interval between captures. 20 ms (50 frames/s) for the NVF230, derived
+    #: from its burst-mode length formula.
+    frame_interval_ms: float = 20.0
+    #: Frames a code must be caught in before the read is trusted. One is the
+    #: bare minimum and no redundancy; a missed frame is a missed code.
+    frames_per_code: int = 2
+
+    @property
+    def reads_in_motion(self) -> bool:
+        """True once an axis speed is stated and the motion checks apply."""
+        return self.axis_speed_mm_per_s > 0.0
+
     @property
     def has_reader_spec(self) -> bool:
         """True once a real reader's field of view has been entered."""

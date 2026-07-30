@@ -336,6 +336,8 @@ def _reader_preset(
     dof_max_mm: float,
     sensor_px_h: int,
     codes_in_view: int = 1,
+    frame_interval_ms: float = 20.0,
+    exposure_us: int = 1000,
 ) -> Preset:
     """One reader, from its published specification.
 
@@ -361,6 +363,10 @@ def _reader_preset(
             "dof_max_mm": dof_max_mm,
             "sensor_px_h": sensor_px_h,
             "min_codes_in_view": codes_in_view,
+            # Frame rate and exposure belong to the reader as much as its optics
+            # do, and both bound how fast the axis can run past the strip.
+            "frame_interval_ms": frame_interval_ms,
+            "exposure_us": exposure_us,
         },
     )
 
@@ -368,16 +374,26 @@ def _reader_preset(
 READER_PRESETS: Final[tuple[Preset, ...]] = (
     _reader_preset(
         "Newland NLS-NVF230-SR",
-        "1280 x 800 sensor, 48.5 x 30.7 degree view, focuses 50-200 mm. A "
-        "general-purpose fixed scanner: it reads one code at a time, so "
-        "position steps in whole spacings and one damaged code loses it until "
-        "the next",
-        source="newlandaidc.com NVF230 product page",
+        "1280 x 800 sensor, 48.5 x 30.7 degree view, focuses 50-200 mm, 50 "
+        "frames a second. A general-purpose fixed scanner: it reads one code at "
+        "a time, so position steps in whole spacings and one damaged code loses "
+        "it until the next.\n\n"
+        "The view angles are confirmed by the user guide's own worked example "
+        "(p.30): at a 100 mm mounting distance its selection tool reports a "
+        "90 x 55 mm window, which is 48.46 x 30.75 degrees. The focus range is "
+        "the product page's figure and is the softer number - the same worked "
+        "example gives a much wider 0-248 mm for a 10 mil code, because depth of "
+        "field grows with code size. Run Newland's NSet selection tool at your "
+        "own module size before trusting either end of it",
+        source="newlandaidc.com NVF230 product page; angles cross-checked "
+        "against the NLS-NVF230 user guide p.30",
         fov_h_deg=48.5,
         fov_v_deg=30.7,
         dof_min_mm=50.0,
         dof_max_mm=200.0,
         sensor_px_h=1280,
+        frame_interval_ms=20.0,
+        exposure_us=1000,
     ),
 )
 
