@@ -58,6 +58,7 @@ from aops.core.project_io import (
 )
 from aops.core.stats import DerivedGeometry
 from aops.core.validation import ValidationReport
+from aops.resources.field_levels import UiLevel, visible_at
 from aops.ui.dialogs.about_dialog import AboutDialog, HelpDialog
 from aops.ui.dialogs.export_progress import ExportProgressDialog
 from aops.ui.panels.sections import PANEL_SPECS
@@ -88,6 +89,7 @@ class MainWindow(QMainWindow):
         self._build_status_bar()
         self._connect()
         self._restore_window()
+        self._restore_mode()
 
         self._controller.recompute()
 
@@ -102,6 +104,9 @@ class MainWindow(QMainWindow):
         self._panels = {}
         #: Expansion state saved while a filter is active, restored on clear.
         self._expanded_before_filter: dict[str, bool] | None = None
+        #: How much of the configuration is on show. Restored from settings
+        #: after the panels exist, since applying it needs them.
+        self._mode = UiLevel.ADVANCED
         for key, title, panel_cls in PANEL_SPECS:
             section = self._accordion.add_section(key, title)
             panel = panel_cls(self._store, section)
@@ -112,6 +117,7 @@ class MainWindow(QMainWindow):
             section.set_expanded(key in ("symbol", "position", "dimensions"))
         self._accordion.finish()
         self._accordion.filterChanged.connect(self._on_filter_changed)
+        self._accordion.modeChanged.connect(self._set_mode)
 
         left_scroll = QScrollArea(self)
         left_scroll.setWidget(self._accordion)
@@ -216,6 +222,8 @@ class MainWindow(QMainWindow):
         bar.addWidget(self._presets_button)
 
         bar.addSeparator()
+        add("Simple / Advanced", self._toggle_mode, "Ctrl+Shift+A",
+            "Switch between the settings a typical strip needs and every setting.")
         add("Find setting", self._accordion.focus_filter, "Ctrl+F",
             "Jump to the filter box and search every section by name.")
         bar.addSeparator()
@@ -409,6 +417,60 @@ class MainWindow(QMainWindow):
         self._store.update_section(section, **{name: fix.value})
         self._focus_field(field)
 
+    # -- simple / advanced --------------------------------------------------
+
+    def _restore_mode(self) -> None:
+        """Apply the remembered mode once the panels are built."""
+        stored = self._settings.ui_mode()
+        mode = UiLevel.SIMPLE if stored == UiLevel.SIMPLE.name else UiLevel.ADVANCED
+        self._mode = mode
+        self._apply_visibility()
+
+    def _toggle_mode(self) -> None:
+        self._set_mode(
+            UiLevel.ADVANCED if self._mode is UiLevel.SIMPLE else UiLevel.SIMPLE
+        )
+
+    @Slot(object)
+    def _set_mode(self, mode: UiLevel) -> None:
+        """Switch how much of the configuration is on show, and remember it."""
+        if mode is self._mode:
+            self._accordion.show_mode(mode, self._hidden_field_count())
+            return
+        self._mode = mode
+        self._settings.set_ui_mode(mode.name)
+        self._apply_visibility()
+
+    def _hidden_field_count(self) -> int:
+        total = sum(len(p.rows()) for p in self._panels.values())
+        simple = sum(p.simple_row_count() for p in self._panels.values())
+        return total - simple
+
+    def _apply_visibility(self) -> None:
+        """Re-apply mode and filter together, and hide emptied sections."""
+        needle = self._accordion.filter_text()
+        for key, section in self._accordion.sections().items():
+            panel = self._panels.get(key)
+            if panel is None:
+                continue
+            shown = panel.refresh_visibility(needle, self._mode)
+            section.set_visible_for_filter(shown > 0)
+            if needle.strip():
+                section.set_expanded(shown > 0)
+
+        self._accordion.show_mode(self._mode, self._hidden_field_count())
+
+        # A search that matches only hidden fields would otherwise look like the
+        # setting had been removed from the application.
+        if needle.strip() and self._mode is UiLevel.SIMPLE:
+            hidden_hits = sum(
+                1
+                for panel in self._panels.values()
+                for path, row in panel.rows().items()
+                if row.matches(needle.strip().lower()) and not visible_at(path, self._mode)
+            )
+            self._accordion.flag_hidden_match(hidden_hits)
+
     @Slot(str)
     def _on_filter_changed(self, needle: str) -> None:
         """Show only sections containing a matching field.
@@ -424,14 +486,7 @@ class MainWindow(QMainWindow):
                 for key, section in self._accordion.sections().items()
             }
 
-        for key, section in self._accordion.sections().items():
-            panel = self._panels.get(key)
-            if panel is None:
-                continue
-            matches = panel.apply_filter(needle)
-            section.set_visible_for_filter(matches > 0 or not active)
-            if active:
-                section.set_expanded(matches > 0)
+        self._apply_visibility()
 
         if not active and self._expanded_before_filter is not None:
             for key, was_open in self._expanded_before_filter.items():
@@ -453,14 +508,29 @@ class MainWindow(QMainWindow):
         self._status_detail.setText(message)
 
     def _focus_field(self, path: str) -> None:
-        """Expand the owning section and focus the offending control."""
-        section_key = path.split(".", 1)[0]
-        section = self._accordion.section(section_key)
-        if section is not None:
-            section.set_expanded(True)
-        for panel in self._panels.values():
-            if panel.focus_field(path):
-                break
+        """Expand the section that actually owns the control, and focus it.
+
+        Found by asking the panels which one holds the row, not by splitting the
+        config path. Design edits output.* and printing.* fields, so keying off
+        the prefix expanded "Print" for a finding whose control sits in
+        "Design" - and then focused a widget that was still hidden.
+
+        Switches to Advanced first if the field is not in the Simple set,
+        otherwise activating a blocking finding from Simple mode would appear to
+        do nothing at all.
+        """
+        if not visible_at(path, self._mode):
+            self._set_mode(UiLevel.ADVANCED)
+
+        for key, panel in self._panels.items():
+            if path not in panel.rows():
+                continue
+            section = self._accordion.section(key)
+            if section is not None:
+                section.set_visible_for_filter(True)
+                section.set_expanded(True)
+            panel.focus_field(path)
+            return
 
     # -- actions ------------------------------------------------------------
 

@@ -245,3 +245,55 @@ def test_severity_ordering_and_blocking():
     report = _report(dc.replace(AopsConfig(), payload=PayloadConfig(digits=1)))
     assert report.max_severity >= Severity.ERROR
     assert report.sorted()[0].severity == report.max_severity
+
+
+# -- axis travel, the number an engineer actually has -----------------------
+
+
+def test_travel_and_end_index_are_inverses():
+    from aops.core.positions import end_index_for_travel, travel_mm
+
+    cell = resolve_cell(DimensionConfig(pitch_mm=25.0, symbol_size_mm=10.0))
+    for end in (1, 5, 42, 420):
+        pos = PositionConfig(start_index=0, end_index=end)
+        assert end_index_for_travel(travel_mm(pos, cell), pos, cell) == end
+
+
+@pytest.mark.parametrize("travel", [1.0, 499.0, 500.0, 2000.0, 2010.0, 10500.0])
+def test_the_range_always_covers_the_travel_asked_for(travel: float):
+    """Rounded up on purpose: stopping short leaves the axis end uncoded."""
+    import dataclasses as dcl
+
+    from aops.core.positions import end_index_for_travel, travel_mm
+
+    cell = resolve_cell(DimensionConfig(pitch_mm=25.0, symbol_size_mm=10.0))
+    pos = PositionConfig(start_index=0, end_index=0)
+    fitted = dcl.replace(pos, end_index=end_index_for_travel(travel, pos, cell))
+    assert travel_mm(fitted, cell) >= travel
+
+
+def test_a_travel_of_zero_or_less_asks_for_no_codes():
+    from aops.core.positions import end_index_for_travel
+
+    cell = resolve_cell(DimensionConfig(pitch_mm=25.0, symbol_size_mm=10.0))
+    pos = PositionConfig(start_index=7, end_index=0)
+    for travel in (0.0, -100.0):
+        assert end_index_for_travel(travel, pos, cell) == 7
+
+
+def test_travel_respects_a_non_zero_start_index():
+    import dataclasses as dcl
+
+    from aops.core.positions import end_index_for_travel, travel_mm
+
+    cell = resolve_cell(DimensionConfig(pitch_mm=25.0, symbol_size_mm=10.0))
+    pos = PositionConfig(start_index=100, end_index=100)
+    end = end_index_for_travel(1000.0, pos, cell)
+    assert travel_mm(dcl.replace(pos, end_index=end), cell) >= 1000.0
+
+
+def test_a_single_code_spans_no_travel():
+    from aops.core.positions import travel_mm
+
+    cell = resolve_cell(DimensionConfig(pitch_mm=25.0, symbol_size_mm=10.0))
+    assert travel_mm(PositionConfig(start_index=0, end_index=0), cell) == 0.0

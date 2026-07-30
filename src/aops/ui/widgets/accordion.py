@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from aops.core.enums import Severity
+from aops.resources.field_levels import UiLevel
 from aops.resources.glossary import SECTION_TERMS
 from aops.ui.theme.palette import SEVERITY_COLOURS
 from aops.ui.widgets.field_row import STEP_HINT
@@ -85,17 +86,25 @@ class AccordionSection(QWidget):
         )
 
     def set_severity(self, severity: Severity | None, count: int = 0) -> None:
-        """Show a coloured badge in the header, so a collapsed section can't hide an error."""
+        """Show a coloured badge in the header, so a collapsed section can't hide an error.
+
+        The clear path has to reset the style sheet as well as the text. Setting
+        only the text left a header that had once carried a warning coloured for
+        the rest of the session, long after the warning was resolved - so the
+        panel accumulated false alarms as you worked.
+        """
         if severity is None or severity < Severity.WARNING:
-            self.header.setText(f"{self._number}.  {self._title.upper()}")
+            self.header.setText(self._plain_title)
+            self.header.setStyleSheet("")
             return
         colour = SEVERITY_COLOURS.get(severity.name, "#e0a44a")
         marker = "!" if severity >= Severity.ERROR else "*"
-        self.header.setText(f"{self._number}.  {self._title.upper()}    {marker} {count}")
+        self.header.setText(f"{self._plain_title}    {marker} {count}")
         self.header.setStyleSheet(f"QToolButton {{ color: {colour}; }}")
-        if severity < Severity.WARNING:
-            self.header.setStyleSheet("")
 
+    @property
+    def _plain_title(self) -> str:
+        return f"{self._number}.  {self._title.upper()}"
 
     def set_visible_for_filter(self, visible: bool) -> None:
         """Hide the whole section when a filter matched nothing inside it."""
@@ -106,6 +115,7 @@ class AccordionPanel(QWidget):
     """Vertical stack of accordion sections, with a filter box above them."""
 
     filterChanged = Signal(str)
+    modeChanged = Signal(object)  # UiLevel
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -128,6 +138,25 @@ class AccordionPanel(QWidget):
         row = QVBoxLayout(bar)
         row.setContentsMargins(0, 0, 0, 6)
         row.setSpacing(4)
+
+        modes = QHBoxLayout()
+        modes.setSpacing(4)
+        self.mode_buttons: dict[UiLevel, QToolButton] = {}
+        for level in (UiLevel.SIMPLE, UiLevel.ADVANCED):
+            button = QToolButton(bar)
+            button.setText(level.display_name)
+            button.setCheckable(True)
+            button.setToolTip(level.description)
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            button.clicked.connect(lambda _c=False, m=level: self.modeChanged.emit(m))
+            self.mode_buttons[level] = button
+            modes.addWidget(button)
+        row.addLayout(modes)
+
+        self.mode_note = QLabel("", bar)
+        self.mode_note.setProperty("sectionCaption", True)
+        self.mode_note.setWordWrap(True)
+        row.addWidget(self.mode_note)
 
         top = QHBoxLayout()
         top.setSpacing(4)
@@ -174,6 +203,25 @@ class AccordionPanel(QWidget):
 
     def sections(self) -> dict[str, AccordionSection]:
         return dict(self._sections)
+
+    def show_mode(self, mode: UiLevel, hidden_count: int) -> None:
+        """Reflect the active mode on the toggle and say what it is holding back."""
+        for level, button in self.mode_buttons.items():
+            button.setChecked(level is mode)
+        if mode is UiLevel.SIMPLE:
+            self.mode_note.setText(
+                f"The settings a typical strip needs. {hidden_count} more in Advanced, "
+                f"all keeping a sensible default."
+            )
+        else:
+            self.mode_note.setText("Every setting. Switch to Simple for just the essentials.")
+
+    def flag_hidden_match(self, count: int) -> None:
+        """Warn that a filter matched fields the current mode is hiding."""
+        if count > 0:
+            self.mode_note.setText(
+                f"{count} more match in Advanced - switch to see them."
+            )
 
     def set_all_expanded(self, expanded: bool) -> None:
         for section in self._sections.values():

@@ -9,6 +9,8 @@ installation guide prints it verbatim.
 
 from __future__ import annotations
 
+from math import ceil
+
 from aops.core.cell import CellSpec
 from aops.core.config import PositionConfig
 from aops.core.enums import Direction, PitchMode
@@ -87,6 +89,43 @@ def distance_per_code_mm(cell: CellSpec, pos: PositionConfig) -> float:
     if pos.pitch_mode is PitchMode.PER_CELL:
         return cell.pitch_mm
     return cell.pitch_mm * pos.increment
+
+
+def travel_mm(pos: PositionConfig, cell: CellSpec) -> float:
+    """Axis distance the printed range spans, first code to last.
+
+    The inverse of `end_index_for_travel`. An engineer knows their axis is
+    2.5 m long; they do not know that means an end index of 100. Reporting the
+    travel a range achieves lets the interface ask for the number they have.
+    """
+    indices = code_indices(pos)
+    if len(indices) < 2:
+        return 0.0
+    return abs(position_mm(indices[-1], pos, cell) - position_mm(indices[0], pos, cell))
+
+
+def end_index_for_travel(travel: float, pos: PositionConfig, cell: CellSpec) -> int:
+    """Smallest end index whose last code reaches at least `travel` millimetres.
+
+    Rounded **up**, deliberately. Rounding down would leave the last stretch of
+    the axis with no code over it, so the machine would lose absolute position
+    exactly where it runs out of travel - the worst place for it. Rounding up
+    prints one code beyond the stated length instead, which costs a few
+    millimetres of tape and nothing else.
+    """
+    if cell.pitch_mm <= 0 or pos.increment <= 0:
+        return pos.start_index
+    if travel <= 0:
+        return pos.start_index
+
+    slots = ceil(travel / cell.pitch_mm - 1e-9)
+    if pos.pitch_mode is PitchMode.PER_CELL:
+        # Position advances one pitch per printed code, so a slot is a code and
+        # the index has to step by `increment` to produce each one.
+        return pos.start_index + slots * pos.increment
+    # Under PER_INDEX every index consumes a slot whether printed or not, so
+    # slots and index offset are the same thing.
+    return pos.start_index + slots
 
 
 def position_formula(pos: PositionConfig, cell: CellSpec) -> str:

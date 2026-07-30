@@ -67,6 +67,15 @@ class SettingsStore:
     def set_last_project_dir(self, path: str) -> None:
         self._settings.setValue("paths/project", path)
 
+    # -- interface ----------------------------------------------------------
+
+    def ui_mode(self) -> str:
+        """Last chosen configuration mode, as a UiLevel name."""
+        return str(self._settings.value("ui/mode", "SIMPLE"))
+
+    def set_ui_mode(self, name: str) -> None:
+        self._settings.setValue("ui/mode", name)
+
     # -- presets ------------------------------------------------------------
 
     def presets_dir(self) -> Path:
