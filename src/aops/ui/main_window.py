@@ -35,6 +35,7 @@ from aops import __app_name__, __version__
 from aops.controller.app_controller import AppController
 from aops.controller.config_store import ConfigStore
 from aops.controller.workers import ExportWorker
+from aops.core.autofix import AutofixResult, autofix
 from aops.core.config import AopsConfig
 from aops.core.drawlist import DrawList
 from aops.core.enums import Severity
@@ -291,6 +292,7 @@ class MainWindow(QMainWindow):
         )
         self._issues.findingActivated.connect(self._focus_field)
         self._issues.fixRequested.connect(self._apply_fix)
+        self._issues.fixAllRequested.connect(self.on_fix_all)
 
     # -- job bar ------------------------------------------------------------
 
@@ -299,6 +301,44 @@ class MainWindow(QMainWindow):
         """Edit made in the job bar rather than in section 10."""
         section, name = path.split(".", 1)
         self._store.update_section(section, **{name: value})
+
+    def fix_everything(self) -> AutofixResult:
+        """Run the auto-fixer and commit its outcome as one undoable step.
+
+        Split from `on_fix_all` so tests can exercise it without a dialog.
+        """
+        result = autofix(self._store.config)
+        if result.changed:
+            self._store.set_config(result.config)
+        return result
+
+    @Slot()
+    def on_fix_all(self) -> None:
+        result = self.fix_everything()
+
+        if not result.changed and result.clean:
+            self._status_detail.setText("Nothing to fix.")
+            return
+
+        parts = []
+        if result.steps:
+            parts.append(
+                f"Applied {len(result.steps)} correction(s) - one Ctrl+Z "
+                "restores all of them:\n\n"
+                + "\n".join(s.sentence for s in result.steps)
+            )
+        if result.unresolved:
+            parts.append(
+                "Still needing you:\n\n"
+                + "\n\n".join(u.sentence for u in result.unresolved)
+            )
+
+        show = QMessageBox.information if result.clean else QMessageBox.warning
+        show(self, "Fix everything", "\n\n".join(parts))
+        self._status_detail.setText(
+            f"Auto-fix: {len(result.steps)} applied, "
+            f"{len(result.unresolved)} left for you."
+        )
 
     def design_for_job(self, travel_mm: float) -> Solution | None:
         """Derive the geometry from the job and apply it as one undoable step.

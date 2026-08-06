@@ -115,12 +115,16 @@ class IssuesBox(QFrame):
 
     findingActivated = Signal(str)
     fixRequested = Signal(object)
+    fixAllRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
+
+        header = QHBoxLayout()
+        header.setSpacing(6)
 
         self.heading = QLabel("ISSUES", self)
         self.heading.setProperty("heading", True)
@@ -130,7 +134,20 @@ class IssuesBox(QFrame):
             "correction is obvious there is a button that applies it, and\n"
             "Ctrl+Z undoes that like any other edit."
         )
-        layout.addWidget(self.heading)
+        header.addWidget(self.heading)
+        header.addStretch(1)
+
+        self.fix_all_button = QPushButton("Fix everything", self)
+        self.fix_all_button.setToolTip(
+            "Apply every correction the rules can compute, repeatedly, until\n"
+            "the list is clean or what remains genuinely needs you - a missing\n"
+            "strip ID cannot be invented, and a media choice is yours to make.\n\n"
+            "Applied as one step: a single Ctrl+Z restores everything."
+        )
+        self.fix_all_button.clicked.connect(self.fixAllRequested.emit)
+        header.addWidget(self.fix_all_button)
+
+        layout.addLayout(header)
 
         self.list = IssuesPanel(self)
         self.list.setMinimumHeight(60)
@@ -145,6 +162,10 @@ class IssuesBox(QFrame):
         errors = counts[Severity.ERROR] + counts[Severity.FATAL]
         warnings = counts[Severity.WARNING]
         notes = counts[Severity.INFO]
+
+        # Nothing at or above WARNING means nothing the fixer would touch -
+        # a live button promising to fix notes would over-promise.
+        self.fix_all_button.setEnabled(errors + warnings > 0)
 
         if errors:
             text = f"ISSUES    {errors} blocking"

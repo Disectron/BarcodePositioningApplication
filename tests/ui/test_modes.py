@@ -482,6 +482,43 @@ def test_design_leaves_the_job_identity_alone(window):
     assert window._store.config.project.strip_id == "X-AXIS"
 
 
+# -- fix everything --------------------------------------------------------
+
+
+def test_fix_everything_is_one_undo_step(window):
+    """Eight corrections, one Ctrl+Z. An undo stack fifteen deep is
+    archaeology, not undo."""
+    window._store.update_section("dimensions", pitch_mm=25.0, symbol_size_mm=40.0)
+    window._store.update_section("payload", digits=2)
+    before = window._store.config
+    window._controller.recompute()
+
+    result = window.fix_everything()
+    assert len(result.steps) >= 2
+    window._controller.recompute()
+    assert not window._controller.report.blocks_export
+
+    window._store.undo()
+    assert window._store.config == before
+
+
+def test_fix_everything_on_a_clean_config_changes_nothing(window):
+    window._store.update_section("project", strip_id="X-AXIS")
+    before = window._store.config
+    assert not window.fix_everything().changed
+    assert window._store.config == before
+
+
+def test_the_fix_all_button_tracks_whether_there_is_anything_to_fix(window):
+    window._store.update_section("project", strip_id="X-AXIS", revision="A")
+    window._controller.recompute()
+    assert not window._issues.fix_all_button.isEnabled()
+
+    window._store.update_section("payload", digits=2)
+    window._controller.recompute()
+    assert window._issues.fix_all_button.isEnabled()
+
+
 # -- the issues list -------------------------------------------------------
 
 

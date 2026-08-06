@@ -21,6 +21,7 @@ exists - they run first and unconditionally.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from math import ceil
 
 from aops.core.cell import GENEROUS_MODULE_UM, MIN_MODULE_UM, resolve_cell
 from aops.core.config import AopsConfig
@@ -30,6 +31,7 @@ from aops.core.enums import (
     ContinuousStrategy,
     LrMarginMode,
     Media,
+    Orientation,
     PitchMode,
     PrintMethod,
     PrintStyle,
@@ -80,11 +82,23 @@ def geo_cell(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Findi
     dim = cfg.dimensions
 
     if dim.pitch_mm <= 0:
+        # The fix rebuilds the pitch from the symbol when one exists, exactly
+        # as GEO-003 would; a zero symbol as well falls back to the shipped
+        # default so the fixer has somewhere to stand.
+        rebuilt = (
+            dim.symbol_size_mm + 2 * max(dim.quiet_zone_mm, 0.0) + 3.0
+            if dim.symbol_size_mm > 0
+            else 25.0
+        )
         yield _f("GEO-001", Severity.ERROR, f"Cell pitch must be positive (got {dim.pitch_mm:.3f} mm).",
-                 "dimensions.pitch_mm", "Set a pitch greater than zero.")
+                 "dimensions.pitch_mm", "Set a pitch greater than zero.",
+                 _mm_fix("dimensions.pitch_mm", rebuilt, "cell pitch"))
     if dim.symbol_size_mm <= 0:
+        # 40% of the pitch mirrors the shipped 10-on-25 default proportions.
+        rebuilt = dim.pitch_mm * 0.4 if dim.pitch_mm > 0 else 10.0
         yield _f("GEO-002", Severity.ERROR, f"Symbol size must be positive (got {dim.symbol_size_mm:.3f} mm).",
-                 "dimensions.symbol_size_mm", "Set a symbol size greater than zero.")
+                 "dimensions.symbol_size_mm", "Set a symbol size greater than zero.",
+                 _mm_fix("dimensions.symbol_size_mm", rebuilt, "symbol size"))
     if dim.quiet_zone_mm < 0:
         yield _f("GEO-005", Severity.ERROR, f"Quiet zone cannot be negative (got {dim.quiet_zone_mm:.3f} mm).",
                  "dimensions.quiet_zone_mm")
@@ -155,12 +169,14 @@ def geo_module(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fin
     if module_um <= 0:
         return
     if module_um < MIN_MODULE_UM:
+        floor_symbol = MIN_MODULE_UM / 1000.0 * derived.matrix_cols
         yield _f("GEO-010", Severity.WARNING,
                  f"Module size is {module_um / 1000:.3f} mm, below the "
                  f"{MIN_MODULE_UM / 1000:.2f} mm practical limit for reliable printing "
                  f"and imaging.",
                  "dimensions.symbol_size_mm",
-                 "Increase the symbol size or shorten the payload.")
+                 "Increase the symbol size or shorten the payload.",
+                 _mm_fix("dimensions.symbol_size_mm", floor_symbol, "symbol size"))
     elif module_um >= GENEROUS_MODULE_UM:
         yield _f("GEO-011", Severity.INFO,
                  f"Module size is {module_um / 1000:.3f} mm - generous. The symbol could "
@@ -203,12 +219,18 @@ def pos_range(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Find
     pos = cfg.position
     if pos.increment <= 0:
         yield _f("POS-002", Severity.ERROR, f"Increment must be positive (got {pos.increment}).",
-                 "position.increment")
+                 "position.increment", "Every index prints when the increment is 1.",
+                 Fix(field="position.increment", value=1, label="Set increment to 1"))
         return
     if pos.end_index < pos.start_index:
+        # The smallest range that is a strip at all. The travel box above is
+        # what sets the real value; this only gets the geometry back on its
+        # feet so that box has something to work from.
         yield _f("POS-001", Severity.ERROR,
                  f"End index ({pos.end_index}) is below the start index ({pos.start_index}).",
-                 "position.end_index", "Set the end index at or above the start index.")
+                 "position.end_index", "Set the end index at or above the start index.",
+                 Fix(field="position.end_index", value=pos.start_index,
+                     label=f"Set end index to {pos.start_index}"))
         return
     count = derived.code_count if derived else 0
     if count == 0:
@@ -399,7 +421,9 @@ def pag_calibration_fits(cfg: AopsConfig, derived: DerivedGeometry | None) -> It
                      f"page width, but would fit vertically ({usable_h:.1f} mm).",
                      "printing.calibration_length_mm",
                      "Rotate the sheet to landscape, or rotate the calibration bar 90 deg. "
-                     "Never shorten it - a bar of unknown length cannot calibrate anything.")
+                     "Never shorten it - a bar of unknown length cannot calibrate anything.",
+                     Fix(field="paper.orientation", value=Orientation.LANDSCAPE,
+                         label="Rotate the sheet to landscape"))
         else:
             yield _f("PAG-003", Severity.ERROR,
                      f"The {cfg.printing.calibration_length_mm:.0f} mm calibration bar does "
@@ -605,7 +629,10 @@ def prn_scaling(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fi
     if pct <= 0 or pct > 200:
         yield _f("PRN-002", Severity.ERROR,
                  f"Printer scaling of {pct:.3f}% is out of the usable range (0-200%).",
-                 "printing.scale_percent")
+                 "printing.scale_percent",
+                 "100% means no correction; calibrate before deviating from it.",
+                 Fix(field="printing.scale_percent", value=100.0,
+                     label="Set printer scaling to 100%"))
         return
     if abs(pct - 100.0) > 1e-9:
         yield _f("PRN-001", Severity.INFO,
@@ -621,7 +648,9 @@ def prn_scaling(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fi
 def prn_calibration(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     if cfg.printing.calibration_length_mm <= 0:
         yield _f("PRN-004", Severity.ERROR, "Calibration length must be positive.",
-                 "printing.calibration_length_mm")
+                 "printing.calibration_length_mm",
+                 "200 mm is the shipped default and fits an A4 landscape page.",
+                 _mm_fix("printing.calibration_length_mm", 200.0, "calibration length"))
 
 
 def prn_module_dots(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
@@ -631,7 +660,9 @@ def prn_module_dots(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterabl
     dpi = cfg.printer.dpi
     if dpi <= 0:
         yield _f("PRN-009", Severity.ERROR, f"Printer resolution must be positive (got {dpi}).",
-                 "printer.dpi")
+                 "printer.dpi",
+                 "203 dpi is the commonest thermal label resolution.",
+                 Fix(field="printer.dpi", value=203, label="Set resolution to 203 dpi"))
         return
     dots = derived.accuracy.module_dots
     if dots <= 0:
@@ -643,7 +674,17 @@ def prn_module_dots(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterabl
                  f"{mm_per_dot(dpi):.4f} mm). Module edges will not render cleanly.",
                  "printer.dpi",
                  f"Use at least {MIN_MODULE_DOTS:.0f} dots per module: raise the printer "
-                 f"resolution or increase the symbol size.")
+                 f"resolution or increase the symbol size.",
+                 # The fix grows the code rather than the resolution: the dpi
+                 # is a fact about the machine that was bought, the code size
+                 # is a design choice. Sized to the comfortable five dots, on
+                 # grid by construction.
+                 _mm_fix(
+                     "dimensions.symbol_size_mm",
+                     ceil(GOOD_MODULE_DOTS * mm_per_dot(dpi) * derived.matrix_cols * 1000.0)
+                     / 1000.0,
+                     "symbol size",
+                 ))
     elif dots < GOOD_MODULE_DOTS - 0.01:
         # The epsilon matters: a size chosen to be exactly 5 dots and then
         # stored at 3 decimals comes back as 4.9996 dots, and warning on that
