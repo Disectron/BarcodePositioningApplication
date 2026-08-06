@@ -53,39 +53,31 @@ class UiLevel(IntEnum):
         }[self]
 
 
-#: Fields Simple mode shows. Everything not listed is Advanced.
+#: Fields Simple mode shows: the facts about the job that only the human
+#: knows. Everything not listed is Advanced.
 #:
-#: Populated from the classification in `docs/` and held to the closure property
-#: by tests. Grouped in the order Simple mode presents them, which follows the
-#: order the questions actually arise: what am I making, how precise, what does
-#: it go on, what reads it.
+#: The geometry fields - pitch, code size, quiet zone, strip height - are
+#: deliberately NOT here, and that is the solver's doing: they are consequences
+#: of the job, not questions. A Simple-mode user states the machine's speed,
+#: the bracket's distance and the devices in use, and presses Design; the
+#: geometry appears with a reason attached to every value, and lives in
+#: Advanced for the day someone disagrees with a decision.
 SIMPLE_FIELDS: Final[frozenset[str]] = frozenset(
     {
-        # `project.machine` and `project.strip_id` are deliberately absent:
-        # the job bar carries them permanently at the top of the window, in both
-        # modes, so listing them here would make Simple mode's section 10 a
-        # duplicate of something already on screen. `JOB_BAR_FIELDS` records
-        # that they are still reachable.
-        # -- how long, and how precisely -----------------------------------
-        "position.end_index",
-        "dimensions.pitch_mm",
-        # -- how big are the codes -----------------------------------------
-        "symbol.symbology",
-        "dimensions.symbol_size_mm",
-        "dimensions.quiet_zone_mm",
-        "dimensions.strip_height_mm",
-        # -- what is it printed on -----------------------------------------
+        # -- the machine ---------------------------------------------------
+        "scanner.axis_speed_mm_per_s",
+        # -- the installation ----------------------------------------------
+        "scanner.mount_distance_mm",
+        "scanner.min_codes_in_view",
+        # -- the devices (normally filled by a Presets pick) ---------------
+        "printer.dpi",
+        # -- what it is printed on -----------------------------------------
         "paper.preset",
         "media.media",
-        "media.method",
-        "media.ribbon",
-        "printer.dpi",
-        # -- how is it printed ---------------------------------------------
+        # -- how it leaves the building ------------------------------------
         "output.tiled_pages",
         "output.continuous",
         "printing.scale_percent",
-        # -- what reads it -------------------------------------------------
-        "scanner.min_codes_in_view",
     }
 )
 
@@ -95,10 +87,14 @@ SIMPLE_FIELDS: Final[frozenset[str]] = frozenset(
 #: Kept here rather than only in the widget because the closure property is
 #: about what a Simple-mode user can *reach*, not about which container it sits
 #: in. A field on the job bar is as reachable as one in the Simple set.
+#: `position.end_index` is here because the axis-travel box owns it: editing
+#: the travel writes the index range, so a finding pointing at the range has a
+#: permanently visible control.
 JOB_BAR_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "project.machine",
         "project.strip_id",
+        "position.end_index",
     }
 )
 

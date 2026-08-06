@@ -847,7 +847,10 @@ class ScannerPanel(ConfigPanel):
         """Report the speed ceiling and what the stated speed spends against it."""
         limits = motion_limits(
             module_mm=derived.cell.module_mm(derived.matrix_cols),
-            fov_mm=derived.scanner.available_fov_mm or derived.scanner.fov_continuous_mm,
+            # Only the window actually established by a mounting distance; the
+            # required FOV is a demand, not a measurement, and treating it as
+            # the window would invent a frame-rate limit nobody is subject to.
+            fov_mm=derived.scanner.available_fov_mm,
             exposure_us=cfg.scanner.exposure_us,
             frames_wanted=cfg.scanner.frames_per_code,
             frame_interval_ms=cfg.scanner.frame_interval_ms,
@@ -865,11 +868,13 @@ class ScannerPanel(ConfigPanel):
             return
 
         verdict = "fits" if limits.fits else "too fast"
-        self.smear.setText(
-            f"{limits.smear_mm:.3f} mm = {limits.smear_modules:.1f} modules, "
-            f"{frames_on_a_code(limits.fov_mm, limits.requested_speed_mm_per_s, cfg.scanner.frame_interval_ms):.1f}"
-            f" frames per code - {verdict}"
-        )
+        text = f"{limits.smear_mm:.3f} mm = {limits.smear_modules:.1f} modules"
+        if limits.fov_mm > 0.0:
+            frames = frames_on_a_code(
+                limits.fov_mm, limits.requested_speed_mm_per_s, cfg.scanner.frame_interval_ms
+            )
+            text += f", {frames:.1f} frames per code"
+        self.smear.setText(f"{text} - {verdict}")
 
 
 class ProjectPanel(ConfigPanel):

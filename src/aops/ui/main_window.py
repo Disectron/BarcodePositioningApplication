@@ -57,9 +57,11 @@ from aops.core.project_io import (
     dump_project,
     load_project,
 )
+from aops.core.solve import Solution, solve
 from aops.core.stats import DerivedGeometry
 from aops.core.validation import ValidationReport
 from aops.resources.field_levels import UiLevel, visible_at
+from aops.symbols.cache import probe_matrix_cols
 from aops.ui.dialogs.about_dialog import AboutDialog, HelpDialog
 from aops.ui.dialogs.export_progress import ExportProgressDialog
 from aops.ui.panels.sections import PANEL_SPECS
@@ -193,6 +195,7 @@ class MainWindow(QMainWindow):
         self._job_bar = JobBar(self)
         self._job_bar.fieldEdited.connect(self._on_job_field)
         self._job_bar.travelRequested.connect(self._on_travel_requested)
+        self._job_bar.designRequested.connect(self.on_design)
 
         central = QWidget(self)
         central_layout = QVBoxLayout(central)
@@ -296,6 +299,58 @@ class MainWindow(QMainWindow):
         """Edit made in the job bar rather than in section 10."""
         section, name = path.split(".", 1)
         self._store.update_section(section, **{name: value})
+
+    def design_for_job(self, travel_mm: float) -> Solution | None:
+        """Derive the geometry from the job and apply it as one undoable step.
+
+        Returns the solution so the caller can present the reasoning, or None
+        when there is no travel to design for. Split from `on_design` so tests
+        can exercise the pipeline without a dialog to dismiss.
+        """
+        if travel_mm <= 0.0:
+            return None
+        cfg = self._store.config
+
+        # Probe how many modules across the symbol will be for the digits this
+        # travel needs, so the solver sizes the right matrix.
+        digits = max(cfg.payload.digits, len(str(int(max(travel_mm, 1.0)))))
+        sample = cfg.payload.prefix + "0" * digits + cfg.payload.suffix
+        cols = probe_matrix_cols(self._controller.cache, cfg.symbol.symbology, sample)
+
+        solution = solve(cfg, travel_mm=travel_mm, matrix_cols=cols)
+        self._store.set_config(solution.config)
+        return solution
+
+    @Slot()
+    def on_design(self) -> None:
+        travel = self._job_bar.travel_spin.value()
+        solution = self.design_for_job(travel)
+        if solution is None:
+            QMessageBox.information(
+                self, "Design strip",
+                "Enter the axis travel first - it is the one dimension the "
+                "design starts from.",
+            )
+            return
+
+        lines = [d.reason for d in solution.decisions]
+        if solution.problems:
+            text = (
+                "The job as stated cannot be fully satisfied:\n\n"
+                + "\n\n".join(f"* {p}" for p in solution.problems)
+                + "\n\nBest available design applied anyway:\n\n"
+                + "\n\n".join(lines)
+            )
+            QMessageBox.warning(self, "Design strip", text)
+        else:
+            QMessageBox.information(
+                self, "Design strip",
+                "Geometry derived from the job. Ctrl+Z restores the previous "
+                "values.\n\n" + "\n\n".join(lines),
+            )
+        self._status_detail.setText(
+            f"Designed from the job: {len(solution.decisions)} values derived."
+        )
 
     @Slot(float)
     def _on_travel_requested(self, travel: float) -> None:

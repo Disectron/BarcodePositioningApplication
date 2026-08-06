@@ -440,6 +440,48 @@ def test_the_job_bar_reports_what_the_settings_produce(window):
     assert "25.000 mm apart" in text
 
 
+# -- designing from the job ------------------------------------------------
+
+
+def test_design_derives_the_geometry_and_is_one_undo_step(window):
+    """The job inputs are the truth; a hand-tweak is overwritten but Ctrl+Z
+    restores it. That was the chosen contract - recompute everything."""
+    window._store.update_section(
+        "scanner", mount_distance_mm=150.0, axis_speed_mm_per_s=1000.0
+    )
+    window._store.update_section("dimensions", symbol_size_mm=33.0)  # the tweak
+    window._controller.recompute()
+
+    solution = window.design_for_job(2000.0)
+    assert solution is not None and solution.feasible
+    assert window._store.config.dimensions.symbol_size_mm != 33.0
+    assert window._store.config.scanner.exposure_us <= 1000
+
+    window._store.undo()
+    assert window._store.config.dimensions.symbol_size_mm == 33.0
+
+
+def test_design_needs_a_travel(window):
+    assert window.design_for_job(0.0) is None
+
+
+def test_a_designed_strip_is_exportable(window):
+    """The solver's whole promise, exercised through the window's own path."""
+    window._store.update_section("scanner", mount_distance_mm=150.0)
+    window._controller.recompute()
+    window.design_for_job(2000.0)
+    window._controller.recompute()
+    assert not window._controller.report.blocks_export
+    assert window._act_export.isEnabled()
+
+
+def test_design_leaves_the_job_identity_alone(window):
+    window._store.update_section("project", machine="LATHE-04", strip_id="X-AXIS")
+    window.design_for_job(2000.0)
+    assert window._store.config.project.machine == "LATHE-04"
+    assert window._store.config.project.strip_id == "X-AXIS"
+
+
 # -- the issues list -------------------------------------------------------
 
 

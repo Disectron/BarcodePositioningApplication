@@ -398,7 +398,54 @@ READER_PRESETS: Final[tuple[Preset, ...]] = (
 )
 
 
+#: Menu group holding printer resolutions.
+PRINTER_GROUP: Final[str] = "Printer"
+
+
+def _printer_preset(dpi: int, summary: str) -> Preset:
+    """One printer resolution class.
+
+    Generic by resolution rather than by model, deliberately: the printer is
+    not yet chosen, and the resolution alone carries everything the solver
+    needs - the dot size that sets the module floor and the dot grid. Three of
+    these side by side is itself the purchasing comparison. A named-model
+    preset (max print length, roll width) can join them the day a machine is
+    picked, exactly as readers join READER_PRESETS.
+    """
+    dot_mm = 25.4 / dpi
+    return _built_in(
+        f"Generic {dpi} dpi label printer",
+        f"{summary}\n\nOne dot is {dot_mm:.4f} mm, so a five-dot module is "
+        f"{5 * dot_mm:.3f} mm and the smallest clean code (10 modules) is "
+        f"{50 * dot_mm:.2f} mm.",
+        group=PRINTER_GROUP,
+        printer={"dpi": dpi},
+    )
+
+
+PRINTER_PRESETS: Final[tuple[Preset, ...]] = (
+    _printer_preset(
+        203,
+        "The workhorse resolution. Coarsest dot, which sounds worse and is "
+        "usually better here: 1 mm modules land almost exactly on 8 dots, and "
+        "thermal printers at 203 dpi print the longest single pieces - "
+        "typically metres, where 600 dpi machines manage less than one.",
+    ),
+    _printer_preset(
+        300,
+        "The middle ground. Finer codes than 203 dpi when space is tight; "
+        "shorter maximum piece length on typical hardware.",
+    ),
+    _printer_preset(
+        600,
+        "The finest common resolution. Only needed when the code must be very "
+        "small; typical hardware prints under a metre in one piece at this "
+        "setting, so a long strip means splices.",
+    ),
+)
+
+
 #: Everything offered in the Presets menu.
 BUILT_IN_PRESETS: Final[tuple[Preset, ...]] = (
-    GENERAL_PRESETS + SIZE_PRESETS + READER_PRESETS
+    GENERAL_PRESETS + SIZE_PRESETS + READER_PRESETS + PRINTER_PRESETS
 )

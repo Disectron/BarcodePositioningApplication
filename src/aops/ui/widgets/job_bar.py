@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -70,6 +71,8 @@ class JobBar(QFrame):
     fieldEdited = Signal(str, str)
     #: Axis travel in millimetres, for the window to convert to an end index.
     travelRequested = Signal(float)
+    #: The user asked for the strip to be designed from the job.
+    designRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -140,6 +143,17 @@ class JobBar(QFrame):
         unit = QLabel("mm", self)
         unit.setProperty("fieldLabel", True)
         row.addWidget(unit)
+
+        self.design_button = QPushButton("Design strip", self)
+        self.design_button.setToolTip(
+            "Derive the whole geometry from the job: code size from the "
+            "printer, reader and speed; spacing, borders, band height, index "
+            "range, digits and exposure from those.\n\n"
+            "Every derived value comes with the reason it was chosen. Applied "
+            "as one step - Ctrl+Z restores what was there before."
+        )
+        self.design_button.clicked.connect(self.designRequested.emit)
+        row.addWidget(self.design_button)
 
         outer.addLayout(row)
 

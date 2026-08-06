@@ -644,7 +644,10 @@ def prn_module_dots(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterabl
                  "printer.dpi",
                  f"Use at least {MIN_MODULE_DOTS:.0f} dots per module: raise the printer "
                  f"resolution or increase the symbol size.")
-    elif dots < GOOD_MODULE_DOTS:
+    elif dots < GOOD_MODULE_DOTS - 0.01:
+        # The epsilon matters: a size chosen to be exactly 5 dots and then
+        # stored at 3 decimals comes back as 4.9996 dots, and warning on that
+        # would tell the user their deliberately-correct choice is wrong.
         yield _f("PRN-006", Severity.WARNING,
                  f"One module is {dots:.1f} printer dots at {dpi} dpi. This prints, but "
                  f"{GOOD_MODULE_DOTS:.0f}+ dots gives noticeably better edge definition "
@@ -1060,7 +1063,11 @@ def scn_motion(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fin
     module_mm = derived.cell.module_mm(derived.matrix_cols)
     limits = motion_limits(
         module_mm=module_mm,
-        fov_mm=derived.scanner.available_fov_mm or derived.scanner.fov_continuous_mm,
+        # Strictly the *available* window. With no mounting distance stated the
+        # window is unknown, and substituting the required FOV would invent a
+        # frame-rate violation out of a number nobody measured. Unknown means
+        # the frame check stays silent; the blur check needs no window at all.
+        fov_mm=derived.scanner.available_fov_mm,
         exposure_us=scn.exposure_us,
         frames_wanted=scn.frames_per_code,
         frame_interval_ms=scn.frame_interval_ms,
