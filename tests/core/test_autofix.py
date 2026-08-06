@@ -226,3 +226,76 @@ def test_the_prn005_fix_lands_on_the_dot_grid():
     assert "PRN-005" not in ids
     assert "PRN-006" not in ids
     assert "PRN-010" not in ids
+
+
+def test_a_fractional_pitch_gets_its_payload_scale_fixed():
+    """12.5 mm pitch rounds payloads by 0.5 mm; tenths represent it exactly."""
+    cfg = dc.replace(A(), dimensions=DimensionConfig(pitch_mm=12.5, symbol_size_mm=8.0))
+    result = autofix(cfg)
+    assert result.config.payload.unit_scale == 10
+    assert "PAY-002" not in {f.rule_id for f in _report(result.config).findings}
+
+
+def test_roll_media_with_tiled_output_switches_to_continuous():
+    from aops.core.enums import PaperPreset
+
+    cfg = dc.replace(A(), paper=dc.replace(A().paper, preset=PaperPreset.ROLL_4IN))
+    assert any(f.rule_id == "PAG-008" for f in _report(cfg).findings)
+    result = autofix(cfg)
+    assert result.config.output.continuous
+    assert "PAG-008" not in {f.rule_id for f in _report(result.config).findings}
+
+
+# -- conflicts: the fight is named, and the ruling is the user's -------------
+
+
+def conflicted() -> AopsConfig:
+    """The reproducible pitch fight.
+
+    At 62 mm the NVF230 sees ~55.8 mm; three codes in view caps the pitch at
+    14.62 mm, but the cutting tolerance wants 15.0. Both rules carry fixes, so
+    the fixer bounces between the two values and must stop and say so.
+    """
+    from aops.core.presets import BUILT_IN_PRESETS
+    from aops.core.presets import apply as apply_preset
+
+    cfg = apply_preset(next(p for p in BUILT_IN_PRESETS if "NVF230" in p.name), A())
+    return dc.replace(
+        cfg,
+        scanner=dc.replace(cfg.scanner, mount_distance_mm=62.0, min_codes_in_view=3),
+        dimensions=DimensionConfig(
+            pitch_mm=15.0, symbol_size_mm=12.0, quiet_zone_mm=0.5, strip_height_mm=40.0
+        ),
+    )
+
+
+def test_a_fight_is_reported_with_both_sides_named():
+    result = autofix(conflicted())
+    assert result.oscillated
+    assert result.conflicts
+    fight = result.conflicts[0]
+    assert fight.field == "dimensions.pitch_mm"
+    assert {fight.challenger_rule, fight.incumbent_rule} == {"SCN-009", "GEO-013"}
+    # The two values genuinely differ - that is what makes it a fight.
+    assert fight.challenger_value != fight.incumbent_value
+    # And the severities differ too, which is why it is a judgement call.
+    assert fight.challenger_severity != fight.incumbent_severity
+    # The cost of ruling for the challenger, in the incumbent's own words.
+    assert "cutting tolerance" in fight.incumbent_message
+
+
+def test_the_fight_is_mentioned_in_the_unresolved_reason():
+    result = autofix(conflicted())
+    fighting = [u for u in result.unresolved if u.rule_id == "SCN-009"]
+    assert fighting
+    assert "GEO-013" in fighting[0].reason
+
+
+def test_no_winner_is_picked_without_the_user():
+    """The user asked to be asked. Whatever the loop last touched, the result
+    must not claim the fight resolved - it must surface it."""
+    result = autofix(conflicted())
+    ids = {f.rule_id for f in _report(result.config).findings}
+    # One of the two sides is still standing, whichever value the loop parked on.
+    assert ids & {"SCN-009", "GEO-013"}
+    assert result.conflicts

@@ -20,6 +20,7 @@ exists - they run first and unconditionally.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterable
 from math import ceil
 
@@ -43,6 +44,7 @@ from aops.core.enums import (
 from aops.core.errors import GeometryError
 from aops.core.layout.bands import solve_bands
 from aops.core.motion import EXPOSURE_MIN_US, frames_on_a_code, motion_limits
+from aops.core.payload import precision_loss_mm
 from aops.core.stats import DerivedGeometry
 from aops.core.units import PDF_MAX_PT, PDF_MAX_USER_UNIT, mm_per_dot
 from aops.core.validation import Finding, Fix, Rule
@@ -293,11 +295,24 @@ def pay_digits(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fin
 def pay_precision(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     if derived is None or derived.precision_loss_mm <= 1e-9:
         return
+
+    # Offer the coarsest scale that represents every position exactly, checked
+    # against the real positions rather than inferred from the pitch alone -
+    # a fractional origin offset can defeat a scale the pitch says is enough.
+    fix = None
+    for scale, label in ((10, "0.1 mm"), (100, "0.01 mm")):
+        candidate = dataclasses.replace(cfg.payload, unit_scale=scale)
+        if precision_loss_mm(cfg.position, derived.cell, candidate) <= 1e-9:
+            fix = Fix(field="payload.unit_scale", value=scale,
+                      label=f"Set payload resolution to {label}")
+            break
+
     yield _f("PAY-002", Severity.WARNING,
              f"The payload scale rounds positions by up to {derived.precision_loss_mm:.4f} mm "
              f"(pitch {derived.cell.pitch_mm:.3f} mm is not a whole number of payload units).",
              "payload.unit_scale",
-             "Increase the payload resolution to 0.1 mm or 0.01 mm.")
+             "Increase the payload resolution to 0.1 mm or 0.01 mm.",
+             fix)
 
 
 def pay_charset(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
@@ -510,7 +525,9 @@ def pag_roll_media(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable
                  "is still cut into pieces that each need datum alignment.",
                  "output.continuous",
                  "Turn on continuous output to print the strip in one piece - roll media "
-                 "removes splices entirely.")
+                 "removes splices entirely.",
+                 Fix(field="output.continuous", value=True,
+                     label="Turn on continuous output"))
     elif cfg.output.continuous:
         yield _f("PAG-009", Severity.INFO,
                  f"Continuous roll output: the strip prints in one piece with no page "

@@ -519,6 +519,70 @@ def test_the_fix_all_button_tracks_whether_there_is_anything_to_fix(window):
     assert window._issues.fix_all_button.isEnabled()
 
 
+# -- conflicts are put to the user -----------------------------------------
+
+
+def conflicted_config():
+    """The pitch fight: reader window vs cutting tolerance (see core tests)."""
+    from aops.core.config import DimensionConfig
+    from aops.core.presets import BUILT_IN_PRESETS
+    from aops.core.presets import apply as apply_preset
+
+    cfg = apply_preset(
+        next(p for p in BUILT_IN_PRESETS if "NVF230" in p.name), AopsConfig()
+    )
+    return dc.replace(
+        cfg,
+        scanner=dc.replace(cfg.scanner, mount_distance_mm=62.0, min_codes_in_view=3),
+        dimensions=DimensionConfig(
+            pitch_mm=15.0, symbol_size_mm=12.0, quiet_zone_mm=0.5, strip_height_mm=40.0
+        ),
+    )
+
+
+def test_ruling_for_the_challenger_applies_its_value(window):
+    window._store.set_config(conflicted_config())
+    result = window.fix_everything()
+    assert result.conflicts
+    fight = result.conflicts[0]
+
+    window.resolve_conflict(fight, "challenger")
+    assert window._store.config.dimensions.pitch_mm == fight.challenger_value
+
+    window._store.undo()
+    assert window._store.config.dimensions.pitch_mm == fight.incumbent_value
+
+
+def test_ruling_for_the_incumbent_keeps_its_value(window):
+    window._store.set_config(conflicted_config())
+    result = window.fix_everything()
+    fight = result.conflicts[0]
+
+    window.resolve_conflict(fight, "incumbent")
+    assert window._store.config.dimensions.pitch_mm == fight.incumbent_value
+
+
+def test_the_dialog_names_both_rules_and_never_picks_for_you(window):
+    from aops.ui.dialogs.conflict_dialog import ConflictDialog
+
+    window._store.set_config(conflicted_config())
+    fight = window.fix_everything().conflicts[0]
+
+    dialog = ConflictDialog(fight, window)
+    assert dialog.choice is None
+    text = (
+        dialog.challenger_button.text()
+        + dialog.incumbent_button.text()
+        + dialog.job_button.text()
+    )
+    assert fight.challenger_rule in text
+    assert fight.incumbent_rule in text
+    assert "Design strip" in text
+
+    dialog.challenger_button.click()
+    assert dialog.choice == "challenger"
+
+
 # -- the issues list -------------------------------------------------------
 
 

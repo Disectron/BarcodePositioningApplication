@@ -54,10 +54,43 @@ class FixStep:
     before: object
     after: object
     label: str
+    severity: Severity = Severity.WARNING
 
     @property
     def sentence(self) -> str:
         return f"[{self.rule_id}] {self.label}  (was {self.before})"
+
+
+@dataclass(frozen=True, slots=True)
+class Conflict:
+    """Two rules pulling one field in opposite directions.
+
+    The challenger is the rule whose fix was refused because applying it would
+    revisit a configuration already seen this run; the incumbent is the rule
+    whose fix put the field where it is. Both sides carry enough to put a
+    question to the user, because a fight between an error and a warning is a
+    judgement call the user has said they want to make themselves.
+    """
+
+    field: str
+    challenger_rule: str
+    challenger_severity: Severity
+    challenger_message: str
+    challenger_value: object
+    incumbent_rule: str
+    incumbent_severity: Severity
+    incumbent_value: object
+    #: What the incumbent rule will say if the challenger's value is taken -
+    #: the concrete cost of ruling that way, quoted rather than alluded to.
+    incumbent_message: str = ""
+
+    @property
+    def sentence(self) -> str:
+        return (
+            f"[{self.challenger_rule}] wants {self.field} = "
+            f"{self.challenger_value}, but [{self.incumbent_rule}] set it to "
+            f"{self.incumbent_value} - the two pull in opposite directions."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +114,8 @@ class AutofixResult:
     unresolved: tuple[Unresolved, ...]
     #: True when the loop stopped because a configuration repeated.
     oscillated: bool = False
+    #: The specific fights behind any oscillation, for the UI to put to the user.
+    conflicts: tuple[Conflict, ...] = ()
 
     @property
     def changed(self) -> bool:
@@ -120,7 +155,14 @@ def autofix(cfg: AopsConfig, *, floor: Severity = Severity.WARNING) -> AutofixRe
     """
     steps: list[FixStep] = []
     seen: set[AopsConfig] = {cfg}
+    conflicts: dict[tuple[str, str], Conflict] = {}
     oscillated = False
+
+    def last_setter(field: str) -> FixStep | None:
+        for step in reversed(steps):
+            if step.field == field:
+                return step
+        return None
 
     for _ in range(MAX_ROUNDS):
         report, _derived = _validate(cfg)
@@ -139,6 +181,39 @@ def autofix(cfg: AopsConfig, *, floor: Severity = Severity.WARNING) -> AutofixRe
             candidate_cfg = _apply(cfg, fix.field, fix.value)
             if candidate_cfg in seen:
                 oscillated = True
+                # Name the fight: this fix versus whichever rule put the field
+                # where it is. "The user's own value" is a legitimate incumbent
+                # too - a hand-set field the fixer keeps bouncing off.
+                incumbent = last_setter(fix.field)
+                key = (fix.field, finding.rule_id)
+                if key not in conflicts:
+                    # What does the incumbent rule say at the challenger's
+                    # value? Validating the refused candidate answers with the
+                    # incumbent's own words - "cutting tolerance drops to
+                    # 1.31 mm" - which is the concrete cost of ruling that way.
+                    incumbent_msg = ""
+                    if incumbent is not None:
+                        candidate_report, _ = _validate(candidate_cfg)
+                        incumbent_msg = next(
+                            (f.message for f in candidate_report.findings
+                             if f.rule_id == incumbent.rule_id),
+                            "",
+                        )
+                    conflicts[key] = Conflict(
+                        field=fix.field,
+                        challenger_rule=finding.rule_id,
+                        challenger_severity=finding.severity,
+                        challenger_message=finding.message,
+                        challenger_value=fix.value,
+                        incumbent_rule=(
+                            incumbent.rule_id if incumbent else "your setting"
+                        ),
+                        incumbent_severity=(
+                            incumbent.severity if incumbent else Severity.INFO
+                        ),
+                        incumbent_value=before,
+                        incumbent_message=incumbent_msg,
+                    )
                 continue
 
             cfg = candidate_cfg
@@ -149,6 +224,7 @@ def autofix(cfg: AopsConfig, *, floor: Severity = Severity.WARNING) -> AutofixRe
                 before=before,
                 after=fix.value,
                 label=fix.label,
+                severity=finding.severity,
             ))
             progressed = True
             break
@@ -159,7 +235,17 @@ def autofix(cfg: AopsConfig, *, floor: Severity = Severity.WARNING) -> AutofixRe
     report, _derived = _validate(cfg)
     unresolved = []
     for finding in _actionable(report, floor):
-        if finding.fix is not None and oscillated:
+        fight = next(
+            (c for c in conflicts.values() if c.challenger_rule == finding.rule_id),
+            None,
+        )
+        if fight is not None:
+            reason = (
+                f"its correction was undone by [{fight.incumbent_rule}] pulling "
+                f"{fight.field} the other way - only you can decide which gives "
+                f"way, or press Design strip to derive a geometry satisfying both"
+            )
+        elif finding.fix is not None and oscillated:
             reason = (
                 "its correction was tried and undone by another rule - two "
                 "constraints are fighting over this value, and only you can "
@@ -182,4 +268,5 @@ def autofix(cfg: AopsConfig, *, floor: Severity = Severity.WARNING) -> AutofixRe
         steps=tuple(steps),
         unresolved=tuple(unresolved),
         oscillated=oscillated,
+        conflicts=tuple(conflicts.values()),
     )

@@ -35,7 +35,7 @@ from aops import __app_name__, __version__
 from aops.controller.app_controller import AppController
 from aops.controller.config_store import ConfigStore
 from aops.controller.workers import ExportWorker
-from aops.core.autofix import AutofixResult, autofix
+from aops.core.autofix import AutofixResult, Conflict, autofix
 from aops.core.config import AopsConfig
 from aops.core.drawlist import DrawList
 from aops.core.enums import Severity
@@ -64,6 +64,7 @@ from aops.core.validation import ValidationReport
 from aops.resources.field_levels import UiLevel, visible_at
 from aops.symbols.cache import probe_matrix_cols
 from aops.ui.dialogs.about_dialog import AboutDialog, HelpDialog
+from aops.ui.dialogs.conflict_dialog import ConflictDialog
 from aops.ui.dialogs.export_progress import ExportProgressDialog
 from aops.ui.panels.sections import PANEL_SPECS
 from aops.ui.settings_store import SettingsStore
@@ -316,7 +317,7 @@ class MainWindow(QMainWindow):
     def on_fix_all(self) -> None:
         result = self.fix_everything()
 
-        if not result.changed and result.clean:
+        if not result.changed and result.clean and not result.conflicts:
             self._status_detail.setText("Nothing to fix.")
             return
 
@@ -338,6 +339,35 @@ class MainWindow(QMainWindow):
         self._status_detail.setText(
             f"Auto-fix: {len(result.steps)} applied, "
             f"{len(result.unresolved)} left for you."
+        )
+
+        # Fights are put to the user one at a time, after the summary so the
+        # question arrives with its context already read. Answering one can
+        # dissolve the next, so each later dialog would be built from a stale
+        # fight - hence re-running the fixer instead of iterating the list.
+        if result.conflicts:
+            self._ask_about_conflict(result.conflicts[0])
+
+    def _ask_about_conflict(self, conflict: Conflict) -> None:
+        dialog = ConflictDialog(conflict, self)
+        if dialog.exec() and dialog.choice is not None:
+            self.resolve_conflict(conflict, dialog.choice)
+
+    def resolve_conflict(self, conflict: Conflict, choice: str) -> None:
+        """Apply the user's ruling on a fight. One field, one undoable edit.
+
+        Split from the dialog so tests can rule both ways without a window.
+        """
+        value = (
+            conflict.challenger_value if choice == "challenger"
+            else conflict.incumbent_value
+        )
+        section, name = conflict.field.split(".", 1)
+        self._store.update_section(section, **{name: value})
+        self._status_detail.setText(
+            f"{conflict.field} settled at {value} - "
+            f"[{conflict.challenger_rule}] vs [{conflict.incumbent_rule}] "
+            f"resolved by you."
         )
 
     def design_for_job(self, travel_mm: float) -> Solution | None:
