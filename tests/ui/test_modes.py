@@ -743,6 +743,65 @@ def test_export_pdf_always_stays_single_row(window):
     assert captured["cfg"].output.rows_per_sheet == 0
 
 
+def sparse_geometry(window):
+    """The user's first real multi-row job: 35 mm QR codes on a 55 mm band.
+
+    One row block is ~71 mm; two rows need more than A4 landscape's 190 mm,
+    so auto-fill can only answer one row per sheet.
+    """
+    window._store.update_section(
+        "dimensions", pitch_mm=50.0, symbol_size_mm=35.0, quiet_zone_mm=3.5,
+        strip_height_mm=55.0,
+    )
+    window._controller.recompute()
+
+
+def test_multirow_that_cannot_stack_asks_before_exporting(window, monkeypatch):
+    """The first real print's lesson: with only one row per sheet the export
+    silently matched Export PDF. Now it asks, and the question names the fix."""
+    from unittest.mock import patch
+
+    from PySide6.QtWidgets import QMessageBox
+
+    sparse_geometry(window)
+
+    asked = {}
+
+    def deny(parent, title, text, *args, **kwargs):
+        asked.update(title=title, text=text)
+        return QMessageBox.StandardButton.Cancel
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(deny))
+    with patch.object(window, "_launch_export") as launch:
+        window.on_export_multirow()
+    launch.assert_not_called()
+    assert "same pages as Export PDF" in asked["text"]
+    assert "Design strip" in asked["text"]
+
+    monkeypatch.setattr(
+        QMessageBox, "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes),
+    )
+    with patch.object(window, "_launch_export") as launch:
+        window.on_export_multirow()
+    launch.assert_called_once()
+
+
+def test_multirow_that_stacks_exports_without_asking(window, monkeypatch):
+    """The default band fits two rows - no dialog, straight to the export."""
+    from unittest.mock import patch
+
+    from PySide6.QtWidgets import QMessageBox
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("no dialog expected when rows can stack")
+
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(unexpected))
+    with patch.object(window, "_launch_export") as launch:
+        window.on_export_multirow()
+    launch.assert_called_once()
+
+
 def test_the_test_page_action_gates_with_the_other_exports(window):
     window._store.update_section("payload", digits=2)  # blocking
     window._controller.recompute()

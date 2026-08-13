@@ -40,6 +40,7 @@ from aops.core.config import AopsConfig
 from aops.core.drawlist import DrawList
 from aops.core.enums import Severity
 from aops.core.errors import AopsError
+from aops.core.layout.bands import rows_that_fit, solve_sheet_bands
 from aops.core.positions import end_index_for_travel
 from aops.core.presets import (
     BUILT_IN_PRESETS,
@@ -804,7 +805,44 @@ class MainWindow(QMainWindow):
         return 0 if rows == 1 else rows
 
     def on_export_multirow(self) -> None:
-        self._start_export(tiles=True, continuous=False, rows=self.multirow_rows())
+        rows = self.multirow_rows()
+        if not self._confirm_multirow(rows):
+            return
+        self._start_export(tiles=True, continuous=False, rows=rows)
+
+    def _confirm_multirow(self, rows: int) -> bool:
+        """True when Multi-Row will actually stack, or the user accepts that
+        it cannot.
+
+        Learned from the first real multi-row print: a 55 mm band on A4
+        landscape fits exactly one row, so auto-fill quietly reproduced the
+        classic single-row sheets and the export looked broken. When stacking
+        is impossible, say so - with the numbers and the way out - instead of
+        exporting a duplicate of Export PDF without comment.
+        """
+        cfg = self._store.config
+        with_cal = cfg.output.calibration_bar
+        effective = rows if rows else rows_that_fit(cfg, with_calibration=with_cal)
+        if effective > 1:
+            return True
+        two = solve_sheet_bands(cfg, 2, with_calibration=with_cal).total_height_mm
+        usable = cfg.paper.usable_height_mm()
+        answer = QMessageBox.question(
+            self,
+            "Multi-Row cannot stack",
+            f"Only one strip row fits this sheet, so Multi-Row would print "
+            f"exactly the same pages as Export PDF.\n\n"
+            f"Two rows of the current geometry "
+            f"({cfg.dimensions.strip_height_mm:.0f} mm band plus ruler and "
+            f"caption) need {two:.0f} mm of sheet height; {usable:.0f} mm is "
+            f"usable.\n\n"
+            f"To stack rows, shrink the job first: Design strip derives the "
+            f"smallest geometry the scanner still reads reliably - typically "
+            f"a 20 mm band that stacks three or more rows per sheet.\n\n"
+            f"Export the single-row sheets anyway?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        return answer == QMessageBox.StandardButton.Yes
 
     def on_export_continuous(self) -> None:
         self._start_export(tiles=False, continuous=True)
