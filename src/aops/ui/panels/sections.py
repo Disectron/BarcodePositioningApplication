@@ -423,6 +423,18 @@ class OutputPanel(ConfigPanel):
         cfg = self._store.config
         self.add_row("tiled_pages", "", make_check("A4 / sheet tiles", cfg.output.tiled_pages))
         self.add_row("continuous", "", make_check("Continuous PDF", cfg.output.continuous))
+        rows_spin = make_int(cfg.output.rows_per_sheet, minimum=0, maximum=40)
+        rows_spin.setSpecialValueText("Auto - fill the sheet")
+        self.add_row(
+            "rows_per_sheet", "Rows per sheet", rows_spin,
+            tooltip=(
+                "How many strip rows the Multi-Row export stacks on each "
+                "sheet. Auto fills the page - a 20 mm band fits five or six "
+                "rows on A4, so a 2 m strip lands on 2 sheets instead of 9.\n\n"
+                "Only the Export Multi-Row button uses this; Export PDF always "
+                "prints the classic one row per sheet."
+            ),
+        )
         self.add_row(
             "continuous_strategy", "Oversize strategy",
             make_combo(

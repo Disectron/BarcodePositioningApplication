@@ -53,10 +53,15 @@ def ruler_elements(
     """
     spec = spec or RulerSpec()
     measurer = measurer or DEFAULT_METRICS
-    out: list[Primitive] = [Line(x0_mm, y_mm, x1_mm, y_mm, S.RULER_BASELINE)]
+    # Drawn at LOCAL x: the content origin of every page is its own x0, so a
+    # tick at absolute position `t` sits at `t - x0` locally. The first
+    # version drew at absolute x, which was invisible on page one (x0 = 0,
+    # the only page anyone had printed) and pushed every later page's ruler
+    # off the sheet - the docstring promised this offset; now it exists.
+    out: list[Primitive] = [Line(0.0, y_mm, x1_mm - x0_mm, y_mm, S.RULER_BASELINE)]
 
     for tick in ticks_between(mm_to_um(x0_mm), mm_to_um(x1_mm), spec, origin_um=mm_to_um(origin_mm)):
-        tx = um_to_mm(tick.x_um)
+        tx = um_to_mm(tick.x_um) - x0_mm
         length = spec.length_for(tick.cls)
         out.append(Line(tx, y_mm, tx, y_mm + length, _TICK_STYLE[tick.cls]))
         if tick.label is not None:

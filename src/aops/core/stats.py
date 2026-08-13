@@ -27,6 +27,7 @@ from aops.core.geometry import (
     total_strip_length_um,
     usable_width_um,
 )
+from aops.core.layout.bands import rows_that_fit
 from aops.core.media import AccuracyReport, accuracy_report
 from aops.core.payload import all_payloads, precision_loss_mm, required_digits
 from aops.core.positions import (
@@ -124,6 +125,8 @@ class DerivedGeometry:
     accuracy: AccuracyReport
     continuous: ContinuousSpec
     matrix_cols: int
+    #: Rows stacked per tiled sheet, resolved (auto-fill already applied).
+    rows_per_sheet: int = 1
 
     @property
     def page_count(self) -> int:
@@ -131,8 +134,16 @@ class DerivedGeometry:
         return len(self.pages)
 
     @property
+    def strip_sheet_count(self) -> int:
+        """Physical sheets the tiled strip occupies, rows stacked."""
+        if not self.pages:
+            return 0
+        rows = max(1, self.rows_per_sheet)
+        return -(-len(self.pages) // rows)
+
+    @property
     def total_pdf_pages(self) -> int:
-        return len(self.pages) + (1 if self.instruction_page_included else 0)
+        return self.strip_sheet_count + (1 if self.instruction_page_included else 0)
 
     #: Set by `derive`; kept as a plain attribute for slots compatibility.
     instruction_page_included: bool = False
@@ -172,6 +183,11 @@ def derive(cfg: AopsConfig, matrix_cols: int = 10) -> DerivedGeometry:
 
     tile_mm = um_to_mm(pages[0].content_length_um) if pages else cfg.paper.usable_width_mm()
 
+    if cfg.output.rows_per_sheet == 0:
+        rows_eff = rows_that_fit(cfg, with_calibration=cfg.output.calibration_bar)
+    else:
+        rows_eff = max(1, cfg.output.rows_per_sheet)
+
     scanner = recommend(cell, matrix_cols, cfg.scanner)
     accuracy = accuracy_report(
         cfg.media,
@@ -202,6 +218,7 @@ def derive(cfg: AopsConfig, matrix_cols: int = 10) -> DerivedGeometry:
         continuous=continuous_spec(cfg, total_mm),
         matrix_cols=matrix_cols,
         instruction_page_included=cfg.output.instruction_page,
+        rows_per_sheet=rows_eff,
     )
 
 

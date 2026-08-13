@@ -236,6 +236,11 @@ class MainWindow(QMainWindow):
                                "Export tiled sheets.")
         self._act_export_cont = add("Export Continuous", self.on_export_continuous,
                                     None, "Export the continuous single-page strip.")
+        self._act_export_rows = add(
+            "Export Multi-Row", self.on_export_multirow, None,
+            "Export tiled sheets with several strip rows stacked per sheet - "
+            "cut apart and join end-to-end. A 2 m strip lands on 2 sheets "
+            "instead of 9. Export PDF keeps the classic one-row layout.")
         self._act_test_page = add("Test Page", self.on_export_test_page, None,
                                   "Export one bench sheet: the calibration bar plus the "
                                   "first page of real codes. Print and verify this before "
@@ -498,6 +503,7 @@ class MainWindow(QMainWindow):
         blocked = report.blocks_export
         self._act_export.setEnabled(not blocked)
         self._act_export_cont.setEnabled(not blocked)
+        self._act_export_rows.setEnabled(not blocked)
         self._act_test_page.setEnabled(not blocked)
 
         if blocked:
@@ -785,7 +791,20 @@ class MainWindow(QMainWindow):
         self._status_detail.setText(f"Saved {path}")
 
     def on_export_tiles(self) -> None:
-        self._start_export(tiles=True, continuous=False)
+        self._start_export(tiles=True, continuous=False, rows=1)
+
+    def multirow_rows(self) -> int:
+        """Row count the Multi-Row export will use, resolved from the setting.
+
+        The Output panel's rows-per-sheet field tunes it; the default of 1
+        means "unset" for this purpose - a user pressing Export Multi-Row with
+        the field untouched plainly wants stacking, so it fills the sheet.
+        """
+        rows = self._store.config.output.rows_per_sheet
+        return 0 if rows == 1 else rows
+
+    def on_export_multirow(self) -> None:
+        self._start_export(tiles=True, continuous=False, rows=self.multirow_rows())
 
     def on_export_continuous(self) -> None:
         self._start_export(tiles=False, continuous=True)
@@ -798,7 +817,9 @@ class MainWindow(QMainWindow):
 
     # -- export -------------------------------------------------------------
 
-    def _start_export(self, *, tiles: bool, continuous: bool) -> None:
+    def _start_export(
+        self, *, tiles: bool, continuous: bool, rows: int | None = None
+    ) -> None:
         import dataclasses
 
         derived = self._controller.derived
@@ -807,13 +828,21 @@ class MainWindow(QMainWindow):
             return
 
         # Snapshot with only the requested outputs enabled. Frozen dataclass, so
-        # the worker thread cannot see it change underneath it.
+        # the worker thread cannot see it change underneath it. `rows` pins the
+        # sheet layout for this run: Export PDF always passes 1 so the classic
+        # single-row layout stays what that button has always produced, and the
+        # Multi-Row action passes 0 (fill) or the configured count.
         cfg = self._store.config
-        cfg = dataclasses.replace(
-            cfg,
-            output=dataclasses.replace(cfg.output, tiled_pages=tiles, continuous=continuous),
+        output = dataclasses.replace(
+            cfg.output, tiled_pages=tiles, continuous=continuous
         )
-        self._launch_export(cfg, derived, "barcode_strip")
+        basename = "barcode_strip"
+        if rows is not None:
+            output = dataclasses.replace(output, rows_per_sheet=rows)
+            if rows != 1:
+                basename = "barcode_strip_multirow"
+        cfg = dataclasses.replace(cfg, output=output)
+        self._launch_export(cfg, derived, basename)
 
     def coupon_config(self) -> AopsConfig | None:
         """The current job, trimmed to the single sheet a bench test needs.

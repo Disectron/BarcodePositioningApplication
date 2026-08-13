@@ -28,8 +28,13 @@ from aops.core.drawlist import DrawList, render
 from aops.core.enums import ContinuousStrategy, VerifyMode
 from aops.core.errors import AopsError, GeometryError
 from aops.core.geometry import verify_splices
+from aops.core.layout.bands import rows_that_fit
 from aops.core.layout.guide import compose_guide_pages
-from aops.core.layout.strip import compose_continuous, compose_strip_page
+from aops.core.layout.strip import (
+    compose_continuous,
+    compose_multirow_sheet,
+    compose_strip_page,
+)
 from aops.core.matrix import ModuleMatrix
 from aops.core.project_io import config_fingerprint
 from aops.core.stats import DerivedGeometry
@@ -216,14 +221,29 @@ def export_tiled(
             c.showPage()
             written += 1
 
-    total_pages = len(derived.pages)
-    for n, page in enumerate(derived.pages, start=1):
+    # One physical sheet per group. With one row per sheet the group is a
+    # single page and the classic composition runs; with stacked rows the
+    # sheet composer takes the whole group. Resolved from the configuration
+    # here, not from `derived`, so the export honours the snapshot it was
+    # given even when the caller flipped the row setting for this run only.
+    rows = cfg.output.rows_per_sheet
+    if rows == 0:
+        rows = rows_that_fit(cfg, with_calibration=cfg.output.calibration_bar)
+    rows = max(1, rows)
+    groups = [derived.pages[i:i + rows] for i in range(0, len(derived.pages), rows)]
+    total_pages = len(groups)
+    for n, group in enumerate(groups, start=1):
         if cancel is not None and cancel.is_set():
             c.save()
             path.unlink(missing_ok=True)
             raise ExportCancelled("Export cancelled.")
 
-        lists = compose_strip_page(page, cfg, derived, matrices, fingerprint)
+        if rows == 1:
+            lists = compose_strip_page(group[0], cfg, derived, matrices, fingerprint)
+        else:
+            lists = compose_multirow_sheet(
+                group, n, total_pages, cfg, derived, matrices, fingerprint
+            )
 
         _begin_content(c, cfg, page_h_pt, content_h_mm=lists.content.height_mm)
         _draw(c, lists.content, cache)

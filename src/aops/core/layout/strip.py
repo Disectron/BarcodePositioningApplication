@@ -9,11 +9,19 @@ from __future__ import annotations
 from dataclasses import replace
 
 from aops.core.config import AopsConfig
-from aops.core.drawlist import DrawList, PageDrawLists, Primitive, Rect, SymbolPrim, Text
+from aops.core.drawlist import (
+    DrawList,
+    Line,
+    PageDrawLists,
+    Primitive,
+    Rect,
+    SymbolPrim,
+    Text,
+)
 from aops.core.enums import PageScope, SegmentKind
 from aops.core.geometry import PageLayout
 from aops.core.layout import style as S
-from aops.core.layout.bands import solve_bands
+from aops.core.layout.bands import solve_bands, solve_sheet_bands
 from aops.core.layout.elements import (
     alignment_arrows,
     calibration_elements,
@@ -130,6 +138,118 @@ def compose_strip_page(
     return PageDrawLists(
         sheet=DrawList(sheet_w, sheet_h, tuple(sheet_items)),
         content=DrawList(content_w, bands.total_height_mm, tuple(items)),
+    )
+
+
+def compose_multirow_sheet(
+    sheet_pages: tuple[PageLayout, ...],
+    sheet_number: int,
+    total_sheets: int,
+    cfg: AopsConfig,
+    derived: DerivedGeometry,
+    matrices: dict[str, ModuleMatrix],
+    fingerprint: str,
+    *,
+    measurer: TextMeasurer | None = None,
+) -> PageDrawLists:
+    """Compose one sheet carrying several consecutive strip rows.
+
+    A row is exactly what a single-row page is - the pagination and the splice
+    guarantee are untouched; only the stacking is new. Header, footer and the
+    calibration bar belong to the sheet; each row carries its own caption,
+    outline, cells, ruler and cut marks, because after cutting, a row is a
+    physical object on its own and must identify itself.
+    """
+    measurer = measurer or DEFAULT_METRICS
+    sheet_w, sheet_h = cfg.paper.sheet_size_mm()
+    content_w = cfg.paper.usable_width_mm()
+
+    with_cal = cfg.output.calibration_bar and (
+        cfg.output.calibration_scope is PageScope.EVERY_PAGE or sheet_number == 1
+    )
+    sb = solve_sheet_bands(cfg, len(sheet_pages), with_calibration=with_cal)
+    row = sb.row
+
+    items: list[Primitive] = []
+    payload_map = _payload_map(cfg, derived)
+    total_rows = len(derived.pages)
+
+    if cfg.output.page_header_footer:
+        items += header_elements(
+            f"SHEET {sheet_number}/{total_sheets}",
+            cfg,
+            content_w,
+            sb.header_baseline_mm,
+            measurer=measurer,
+        )
+
+    for page, top in zip(sheet_pages, sb.row_tops_mm, strict=True):
+        length_mm = um_to_mm(page.content_length_um)
+        strip_top = top + row.strip_top_mm
+        strip_bottom = top + row.strip_bottom_mm
+
+        pos0, pos1 = _page_position_range(page, cfg, derived)
+        codes = (
+            f"CODES {page.first_index}-{page.last_index}"
+            if page.first_index is not None
+            else "CODES (none)"
+        )
+        # Caption baseline sits in the upper half of the caption zone; the
+        # alignment arrows live in the lower half (strip_top - 2), so the
+        # two share the zone without colliding.
+        items.append(Text(
+            0.0, top - 3.8,
+            f"ROW {page.strip_page_number}/{total_rows}   {codes}   "
+            f"X {page.strip_x0_mm:.1f}-{page.strip_x1_mm:.1f} mm   "
+            f"POS {pos0:.1f}-{pos1:.1f} mm",
+            S.FOOTER,
+        ))
+
+        if cfg.printing.cut_marks:
+            items.append(Rect(0.0, strip_top, length_mm, row.strip_height_mm, S.STRIP_OUTLINE))
+
+        items += strip_cells(
+            page, derived.cell, matrices, payload_map, cfg, strip_top, measurer=measurer,
+        )
+
+        if row.ruler_y_mm is not None:
+            items += ruler_elements(
+                page.strip_x0_mm, page.strip_x1_mm, top + row.ruler_y_mm, measurer=measurer,
+            )
+
+        for x in (0.0, length_mm):
+            items += cut_marks(x, strip_top, strip_bottom, cfg.printing)
+
+        items += alignment_arrows(0.0, length_mm, strip_top - 2.0, cfg.printing)
+
+    # The cutting zones between rows. Dashed, full content width, labelled -
+    # the rows above and below already say what they are; this line only has
+    # to say "separate them here".
+    for y in sb.cut_line_ys_mm:
+        items.append(Line(4.0, y, content_w, y, S.CUT_LINE))
+        items.append(Text(0.0, y + 1.0, "CUT", S.RULER_LABEL))
+
+    if with_cal and sb.calibration_y_mm is not None:
+        items += calibration_elements(0.0, sb.calibration_y_mm, cfg.printing, measurer=measurer)
+
+    if cfg.output.page_header_footer:
+        first, last = sheet_pages[0], sheet_pages[-1]
+        p0, _ = _page_position_range(first, cfg, derived)
+        _, p1 = _page_position_range(last, cfg, derived)
+        left = (
+            f"SHEET {sheet_number:02d}/{total_sheets:02d}   "
+            f"ROWS {first.strip_page_number}-{last.strip_page_number}/{total_rows}   "
+            f"X {first.strip_x0_mm:.1f}-{last.strip_x1_mm:.1f} mm   "
+            f"POS {p0:.1f}-{p1:.1f} mm"
+        )
+        right = f"REV {cfg.project.revision or '-'}   {fingerprint}"
+        items += footer_elements(left, right, content_w, sb.footer_baseline_mm, measurer=measurer)
+
+    sheet_items = registration_marks(sheet_w, sheet_h, cfg.printing)
+
+    return PageDrawLists(
+        sheet=DrawList(sheet_w, sheet_h, tuple(sheet_items)),
+        content=DrawList(content_w, sb.total_height_mm, tuple(items)),
     )
 
 

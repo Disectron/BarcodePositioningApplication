@@ -42,7 +42,7 @@ from aops.core.enums import (
     Symbology,
 )
 from aops.core.errors import GeometryError
-from aops.core.layout.bands import solve_bands
+from aops.core.layout.bands import rows_that_fit, solve_bands
 from aops.core.media import CALIBRATION_ROUND_MM, max_calibration_length_mm
 from aops.core.motion import EXPOSURE_MIN_US, frames_on_a_code, motion_limits
 from aops.core.payload import precision_loss_mm
@@ -456,12 +456,36 @@ def pag_count(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Find
     if n > 500:
         yield _f("PAG-004", Severity.ERROR,
                  f"{n} pages is impractical to print and splice.",
-                 "paper.preset", "Use a larger sheet or the continuous export.")
+                 "paper.preset",
+                 "Use a larger sheet, the Multi-Row export, or the continuous export.")
     elif n > 50:
         yield _f("PAG-004", Severity.WARNING,
                  f"{n} pages will need careful handling; each tile must be positioned "
                  f"against a measured datum.",
-                 "paper.preset", "A larger sheet or the continuous export reduces splices.")
+                 "paper.preset",
+                 "A larger sheet or the continuous export reduces splices; the "
+                 "Multi-Row export cuts the sheet count several-fold.")
+
+
+def pag_rows_fit(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """An explicit row count taller than the sheet would print clipped ink.
+
+    Only fires for a hand-set count of two or more: one row always fits (the
+    single-row rules own that case), and auto-fill cannot overshoot by
+    construction.
+    """
+    rows = cfg.output.rows_per_sheet
+    if rows < 2 or not cfg.output.tiled_pages:
+        return
+    fit = rows_that_fit(cfg, with_calibration=cfg.output.calibration_bar)
+    if rows > fit:
+        yield _f("PAG-013", Severity.ERROR,
+                 f"{rows} rows per sheet do not fit this page - at most {fit} do. "
+                 f"The Multi-Row export would draw past the bottom margin.",
+                 "output.rows_per_sheet",
+                 "Let the sheet fill automatically, or reduce the row count.",
+                 Fix(field="output.rows_per_sheet", value=0,
+                     label="Fill the sheet automatically"))
 
 
 def pag_last_page(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
@@ -1251,6 +1275,7 @@ ALL_RULES: tuple[Rule, ...] = (
     pag_height,
     pag_calibration_fits,
     pag_count,
+    pag_rows_fit,
     pag_last_page,
     pag_margins,
     pag_leading,

@@ -111,6 +111,11 @@ class OutputConfig:
 
     tiled_pages: bool = True
     continuous: bool = False
+    #: Strip rows stacked on each tiled sheet. 1 = one row per sheet (the
+    #: classic layout); 0 = fill the sheet with as many rows as fit. A strip
+    #: band is 20-60 mm tall on a ~190 mm sheet, so filling routinely turns
+    #: nine sheets into two.
+    rows_per_sheet: int = 1
     continuous_strategy: ContinuousStrategy = ContinuousStrategy.USER_UNIT
     continuous_max_length_mm: float = 5000.0
     instruction_page: bool = True

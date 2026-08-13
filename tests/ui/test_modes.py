@@ -705,6 +705,44 @@ def test_a_job_shorter_than_one_page_is_not_padded(window):
     assert derive(coupon).code_count == 4
 
 
+def test_the_multirow_action_gates_with_the_other_exports(window):
+    window._store.update_section("payload", digits=2)
+    window._controller.recompute()
+    assert not window._act_export_rows.isEnabled()
+
+    window._store.update_section("payload", digits=6)
+    window._controller.recompute()
+    assert window._act_export_rows.isEnabled()
+
+
+def test_multirow_rows_resolution(window):
+    """Field untouched (1) means fill the sheet; explicit values are honoured."""
+    assert window.multirow_rows() == 0
+
+    window._store.update_section("output", rows_per_sheet=3)
+    assert window.multirow_rows() == 3
+
+    window._store.update_section("output", rows_per_sheet=0)
+    assert window.multirow_rows() == 0
+
+
+def test_export_pdf_always_stays_single_row(window):
+    """The classic button's output must not change because the field did."""
+    from unittest.mock import patch
+
+    window._store.update_section("output", rows_per_sheet=0)
+    captured = {}
+    with patch.object(window, "_launch_export",
+                      side_effect=lambda cfg, d, name: captured.update(cfg=cfg)):
+        window.on_export_tiles()
+    assert captured["cfg"].output.rows_per_sheet == 1
+
+    with patch.object(window, "_launch_export",
+                      side_effect=lambda cfg, d, name: captured.update(cfg=cfg)):
+        window.on_export_multirow()
+    assert captured["cfg"].output.rows_per_sheet == 0
+
+
 def test_the_test_page_action_gates_with_the_other_exports(window):
     window._store.update_section("payload", digits=2)  # blocking
     window._controller.recompute()
