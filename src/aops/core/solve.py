@@ -75,9 +75,13 @@ COMFORT_EXPOSURE_US: int = 500
 #: surely as travel does, so the solver never designs above the reader default.
 EXPOSURE_MAX_SAFE_US: int = 1_000
 
-#: White space left for the guillotine at each splice, beyond the quiet zones.
-#: 3 mm total leaves 1.5 mm of cutting tolerance each side of a cell boundary,
-#: the figure rule GEO-013 asks for.
+#: Total white the guillotine gets at each cell boundary - the gap between the
+#: ink of two adjacent codes, quiet zones included. 3 mm is rule GEO-013's own
+#: floor: 1.5 mm of cutting tolerance each side. Counting the quiet zones in,
+#: rather than adding this on top of them, matches the rule exactly - the first
+#: version added it on top and so demanded a 15 mm pitch where the validator
+#: itself was happy with 10, producing a clumsier position formula for no
+#: safety the checker recognised.
 CUT_TOLERANCE_MM: float = 3.0
 
 #: Pitches are rounded up to a multiple of this. "Codes every 15 mm" is a
@@ -229,14 +233,18 @@ def solve(
     ))
 
     # -- pitch: as fine as the splice allows, in clean numbers -------------
-    pitch_floor = symbol_mm + 2.0 * quiet_mm + CUT_TOLERANCE_MM
+    # The white gap between two codes must hold the larger of the quiet zones
+    # and the guillotine's tolerance - not their sum. A cut may wander into
+    # quiet-zone *territory* so long as the code keeps its quiet width of
+    # white to the new edge, which is exactly how rule GEO-013 counts it.
+    pitch_floor = symbol_mm + max(2.0 * quiet_mm, CUT_TOLERANCE_MM)
     pitch_mm = _round_up_mm(pitch_floor, PITCH_STEP_MM)
     decisions.append(Decision(
         "dimensions.pitch_mm", round(pitch_mm, 3),
-        f"Code spacing {pitch_mm:.0f} mm: code plus clear borders plus "
-        f"{CUT_TOLERANCE_MM:.0f} mm of cutting tolerance needs "
-        f"{pitch_floor:.1f} mm, rounded up to a clean multiple of "
-        f"{PITCH_STEP_MM:.0f}.",
+        f"Code spacing {pitch_mm:.0f} mm: the code plus a {CUT_TOLERANCE_MM:.0f} mm "
+        f"white gap for quiet zones and cutting needs {pitch_floor:.1f} mm, "
+        f"rounded up to a clean multiple of {PITCH_STEP_MM:.0f} so the position "
+        f"formula stays a number to carry in your head.",
     ))
 
     # -- does the redundancy asked for fit the window? ---------------------

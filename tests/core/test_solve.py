@@ -149,6 +149,25 @@ def test_pitch_is_a_clean_multiple():
     assert pitch % PITCH_STEP_MM == pytest.approx(0.0)
 
 
+def test_the_pitch_floor_matches_the_validators_not_something_stricter():
+    """Quiet zones count toward the cutting gap, exactly as GEO-013 counts it.
+
+    The first solver added the 3 mm gap on top of the quiet zones and demanded
+    a 15 mm pitch where its own validator was happy with 10 - a clumsier
+    position formula (P = i x 15) for no safety the checker recognised. The
+    reference job must land on the 10 the rules actually permit.
+    """
+    solution = solve(job(dpi=203, speed=1000.0, distance=150.0), travel_mm=2000.0)
+    dims = solution.config.dimensions
+    assert dims.pitch_mm == pytest.approx(10.0)
+
+    # And the white gap the rule inspects is at its floor or better.
+    assert dims.pitch_mm - dims.symbol_size_mm >= 3.0 - 1e-9
+
+    d = derive(solution.config)
+    assert d.position_formula == "P [mm] = Index x 10.000"
+
+
 def test_exposure_keeps_smear_within_one_module():
     solution = solve(job(speed=1500.0, distance=150.0), travel_mm=2000.0)
     cfg = solution.config
@@ -198,12 +217,14 @@ def test_an_impossible_speed_is_reported_not_papered_over():
 def test_too_much_redundancy_for_the_window_is_reported():
     """Three codes in view through a close-mounted reader cannot fit.
 
-    At 50 mm the NVF230 sees ~45 mm; three 15 mm pitches plus a code is ~51.
-    (At 60 mm it sees ~54 mm and the same job fits - the margin between the
-    two test distances is one focal step, which is why the number matters.)
+    At 35 mm the NVF230 sees ~31.5 mm; three 10 mm pitches plus a code is
+    ~36.3. (This distance moved once already: aligning the pitch floor with
+    GEO-013 dropped the reference pitch from 15 to 10 mm, which made the old
+    50 mm scenario legitimately feasible - the solver improving is allowed to
+    invalidate the test's scenario, not its property.)
     """
     solution = solve(
-        job(dpi=203, distance=50.0, codes_in_view=3), travel_mm=2000.0
+        job(dpi=203, distance=35.0, codes_in_view=3), travel_mm=2000.0
     )
     assert not solution.feasible
     assert any("in view" in p for p in solution.problems)
@@ -213,7 +234,7 @@ def test_infeasibility_matches_the_validators_verdict():
     """When the solver says 'cannot', the rules must agree something is wrong -
     the two are independent implementations of the same physics."""
     solution = solve(
-        job(dpi=203, distance=50.0, codes_in_view=3), travel_mm=2000.0
+        job(dpi=203, distance=35.0, codes_in_view=3), travel_mm=2000.0
     )
     report = run_rules(ALL_RULES, solution.config, derive(solution.config))
     assert report.max_severity >= 1
