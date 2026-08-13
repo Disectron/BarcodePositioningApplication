@@ -59,7 +59,7 @@ from aops.core.project_io import (
     load_project,
 )
 from aops.core.solve import Solution, solve
-from aops.core.stats import DerivedGeometry
+from aops.core.stats import DerivedGeometry, derive
 from aops.core.validation import ValidationReport
 from aops.resources.field_levels import UiLevel, visible_at
 from aops.symbols.cache import probe_matrix_cols
@@ -236,6 +236,10 @@ class MainWindow(QMainWindow):
                                "Export tiled sheets.")
         self._act_export_cont = add("Export Continuous", self.on_export_continuous,
                                     None, "Export the continuous single-page strip.")
+        self._act_test_page = add("Test Page", self.on_export_test_page, None,
+                                  "Export one bench sheet: the calibration bar plus the "
+                                  "first page of real codes. Print and verify this before "
+                                  "committing a full roll.")
         bar.addSeparator()
         self._act_undo = add("Undo", self._store.undo, "Ctrl+Z")
         self._act_redo = add("Redo", self._store.redo, "Ctrl+Y")
@@ -494,6 +498,7 @@ class MainWindow(QMainWindow):
         blocked = report.blocks_export
         self._act_export.setEnabled(not blocked)
         self._act_export_cont.setEnabled(not blocked)
+        self._act_test_page.setEnabled(not blocked)
 
         if blocked:
             ids = ", ".join(sorted({f.rule_id for f in report.blocking}))
@@ -800,6 +805,80 @@ class MainWindow(QMainWindow):
         if derived is None:
             QMessageBox.warning(self, "Cannot export", "The geometry could not be resolved.")
             return
+
+        # Snapshot with only the requested outputs enabled. Frozen dataclass, so
+        # the worker thread cannot see it change underneath it.
+        cfg = self._store.config
+        cfg = dataclasses.replace(
+            cfg,
+            output=dataclasses.replace(cfg.output, tiled_pages=tiles, continuous=continuous),
+        )
+        self._launch_export(cfg, derived, "barcode_strip")
+
+    def coupon_config(self) -> AopsConfig | None:
+        """The current job, trimmed to the single sheet a bench test needs.
+
+        Same geometry, same payloads, same paper - the first page of the real
+        strip, so what the bench proves is what the machine gets. Only the
+        range is shortened (to one page of codes), the guide page dropped, and
+        the output forced to one tiled sheet. The live configuration is not
+        touched; the coupon exists only for the export.
+        """
+        import dataclasses
+
+        derived = self._controller.derived
+        if derived is None or not derived.pages:
+            return None
+        cfg = self._store.config
+        pos = cfg.position
+
+        # Start from what the full pagination says the first page carries, then
+        # let pagination itself confirm. Estimating from cells-per-page ignored
+        # the leader; trusting the first page's last code ignored the trailer,
+        # which follows the final code and spilled onto a second sheet. Only
+        # the paginator knows where its own furniture lands, so ask it until
+        # it answers "one page" - a couple of iterations at most.
+        end = min(pos.end_index, derived.pages[0].last_index or pos.end_index)
+        while True:
+            coupon = dataclasses.replace(
+                cfg,
+                position=dataclasses.replace(pos, end_index=end),
+                output=dataclasses.replace(
+                    cfg.output, tiled_pages=True, continuous=False,
+                    instruction_page=False,
+                ),
+            )
+            if end <= pos.start_index:
+                return coupon
+            try:
+                pages = len(derive(coupon, matrix_cols=derived.matrix_cols).pages)
+            except AopsError:
+                return coupon
+            if pages <= 1:
+                return coupon
+            end -= pos.increment
+
+    def on_export_test_page(self) -> None:
+        """Export the one-sheet bench coupon: calibration bar plus real codes.
+
+        The freeze checklist's step six, made one click: print this, measure
+        the bar, scan the codes at the real mounting distance - before
+        committing a full roll to a setup nobody has proven.
+        """
+        coupon = self.coupon_config()
+        if coupon is None:
+            QMessageBox.warning(self, "Cannot export", "The geometry could not be resolved.")
+            return
+        sample = coupon.payload.prefix + "0" * coupon.payload.digits + coupon.payload.suffix
+        cols = probe_matrix_cols(self._controller.cache, coupon.symbol.symbology, sample)
+        try:
+            derived = derive(coupon, matrix_cols=cols)
+        except AopsError as exc:
+            QMessageBox.warning(self, "Cannot export", str(exc))
+            return
+        self._launch_export(coupon, derived, "test_page")
+
+    def _launch_export(self, cfg: AopsConfig, derived: DerivedGeometry, basename: str) -> None:
         if self._thread is not None:
             return
 
@@ -810,18 +889,10 @@ class MainWindow(QMainWindow):
             return
         self._settings.set_last_export_dir(directory)
 
-        # Snapshot with only the requested outputs enabled. Frozen dataclass, so
-        # the worker thread cannot see it change underneath it.
-        cfg = self._store.config
-        cfg = dataclasses.replace(
-            cfg,
-            output=dataclasses.replace(cfg.output, tiled_pages=tiles, continuous=continuous),
-        )
-
         self._progress = ExportProgressDialog(self)
         self._thread = QThread(self)
         self._worker = ExportWorker(
-            cfg, derived, self._controller.cache, Path(directory), "barcode_strip"
+            cfg, derived, self._controller.cache, Path(directory), basename
         )
         self._worker.moveToThread(self._thread)
 

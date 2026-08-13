@@ -35,8 +35,6 @@ from aops.symbols.placeholders import PLACEHOLDER_REASONS
 from aops.ui.panels.base import ConfigPanel, enum_items
 from aops.ui.widgets.field_row import (
     COMBO_VALUES,
-    FieldRow,
-    combo_value,
     make_check,
     make_combo,
     make_double,
@@ -320,11 +318,21 @@ class DesignPanel(ConfigPanel):
     def build(self) -> None:
         cfg = self._store.config
 
+        # A virtual row so Simple mode can carry it: there is no stored style
+        # field, but "plain codes or full furniture" is a Simple-grade choice.
         self.style_combo = make_combo(
             [(s.display_name, s) for s in PrintStyle], detect_style(cfg)
         )
-        self.style_combo.currentIndexChanged.connect(self._on_style_changed)
-        self.add_widget(FieldRow("Print style", self.style_combo, "", parent=self))
+        self.add_virtual_row(
+            "design.style", "Print style", self.style_combo, self._apply_style_choice,
+            tooltip=(
+                "What the printed page carries besides the codes themselves.\n\n"
+                "Labelled prints the position under every code; Plain is codes "
+                "only; Engineering adds the ruler and full page furniture. "
+                "Picking one sets all the switches below in a single undoable "
+                "step; changing any switch by hand shows as Custom."
+            ),
+        )
 
         self.style_note = self.add_note("")
 
@@ -379,16 +387,15 @@ class DesignPanel(ConfigPanel):
                                                         cfg.printing.alignment_arrows),
                      section="printing")
 
-    def _on_style_changed(self) -> None:
-        if self._loading:
-            return
-        style = combo_value(self.style_combo)
+    def _apply_style_choice(self, style: object) -> None:
+        """Write every switch the chosen style controls, as one undo step.
+
+        The loading guard lives in the virtual row's wiring; Custom is what a
+        configuration reports, not a preset, so choosing it changes nothing.
+        """
         flags = STYLE_FLAGS.get(style)
-        if flags is None:  # Custom selected explicitly - change nothing.
-            return
-        # One commit, so a single undo returns to the previous style rather than
-        # to a half-applied mixture.
-        self._store.update_sections(**flags)
+        if flags is not None:
+            self._store.update_sections(**flags)
 
     def load(self, cfg: AopsConfig, derived: DerivedGeometry | None) -> None:
         super().load(cfg, derived)

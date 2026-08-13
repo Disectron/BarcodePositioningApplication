@@ -566,6 +566,89 @@ def test_a_length_that_is_not_whole_codes_rounds_up(window):
     assert window._store.config.position.end_index == 200  # 2000 mm, not 1990
 
 
+# -- the Simple-mode style picker ------------------------------------------
+
+
+def test_the_style_picker_is_a_simple_field_in_the_design_section(window):
+    window._set_mode(UiLevel.SIMPLE)
+    rows = window._panels["design"].rows()
+    assert "design.style" in rows
+    assert not rows["design.style"].isHidden()
+    assert not window._accordion.section("design").isHidden()
+
+
+def test_picking_plain_strips_the_furniture_in_one_undo_step(window):
+    from aops.core.design import detect_style
+    from aops.core.enums import PrintStyle
+    from aops.ui.widgets.field_row import COMBO_VALUES
+
+    window._set_mode(UiLevel.SIMPLE)
+    combo = window._panels["design"].style_combo
+    before = window._store.config
+
+    values = getattr(combo, COMBO_VALUES)
+    combo.setCurrentIndex(values.index(PrintStyle.PLAIN))
+
+    cfg = window._store.config
+    assert detect_style(cfg) is PrintStyle.PLAIN
+    assert not cfg.output.human_readable
+    assert not cfg.output.engineering_ruler
+
+    window._store.undo()
+    assert window._store.config == before
+
+
+# -- the test-page coupon ---------------------------------------------------
+
+
+def test_the_coupon_is_one_sheet_of_the_real_strip(window):
+    from aops.core.stats import derive
+
+    window._store.update_section("dimensions", pitch_mm=10.0)
+    window._controller.recompute()
+    window._panels["position"].travel.setValue(2000.0)
+    window._controller.recompute()
+
+    coupon = window.coupon_config()
+    assert coupon is not None
+    d = derive(coupon)
+    assert len(d.pages) == 1
+    assert not coupon.output.continuous
+    assert not coupon.output.instruction_page
+    assert coupon.output.calibration_bar  # the point of the bench sheet
+
+    # Same strip, same payloads: the coupon's codes are the strip's first codes.
+    full = window._controller.derived
+    assert d.payloads == full.payloads[: len(d.payloads)]
+    assert len(d.payloads) >= 2
+
+
+def test_the_coupon_does_not_touch_the_live_configuration(window):
+    before = window._store.config
+    window.coupon_config()
+    assert window._store.config == before
+
+
+def test_a_job_shorter_than_one_page_is_not_padded(window):
+    from aops.core.stats import derive
+
+    window._store.update_section("position", end_index=3)
+    window._controller.recompute()
+    coupon = window.coupon_config()
+    assert coupon.position.end_index == 3
+    assert derive(coupon).code_count == 4
+
+
+def test_the_test_page_action_gates_with_the_other_exports(window):
+    window._store.update_section("payload", digits=2)  # blocking
+    window._controller.recompute()
+    assert not window._act_test_page.isEnabled()
+
+    window._store.update_section("payload", digits=6)
+    window._controller.recompute()
+    assert window._act_test_page.isEnabled()
+
+
 # -- conflicts are put to the user -----------------------------------------
 
 

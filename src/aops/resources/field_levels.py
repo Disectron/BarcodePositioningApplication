@@ -80,6 +80,10 @@ SIMPLE_FIELDS: Final[frozenset[str]] = frozenset(
         "paper.preset",
         "media.media",
         # -- how it leaves the building ------------------------------------
+        # design.style is a virtual row (there is no stored style; the picker
+        # writes the switches it stands for). Plain codes versus full page
+        # furniture is a Simple-grade decision.
+        "design.style",
         "output.tiled_pages",
         "output.continuous",
         "printing.scale_percent",
