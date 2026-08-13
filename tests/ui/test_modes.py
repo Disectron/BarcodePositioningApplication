@@ -598,6 +598,72 @@ def test_picking_plain_strips_the_furniture_in_one_undo_step(window):
     assert window._store.config == before
 
 
+# -- the Simple-mode climate picker ----------------------------------------
+
+
+def test_the_climate_picker_is_a_simple_field(window):
+    window._set_mode(UiLevel.SIMPLE)
+    rows = window._panels["media"].rows()
+    assert "media.climate" in rows
+    assert not rows["media.climate"].isHidden()
+    # The raw swing numbers it stands for stay Advanced.
+    assert rows["media.rh_swing_percent"].isHidden()
+    assert rows["media.temp_swing_deg_c"].isHidden()
+
+
+def test_a_fresh_configuration_reads_as_a_named_climate_not_custom(window):
+    """Defaults matching FACTORY is deliberate - Custom on first launch would
+    say the tool does not understand its own defaults."""
+    from aops.core.enums import Climate
+    from aops.core.media import detect_climate
+
+    assert detect_climate(window._store.config.media) is Climate.FACTORY
+
+
+def test_picking_a_climate_writes_both_swings_in_one_undo_step(window):
+    from aops.core.enums import Climate
+    from aops.ui.widgets.field_row import COMBO_VALUES
+
+    combo = window._panels["media"].climate_combo
+    before = window._store.config
+
+    values = getattr(combo, COMBO_VALUES)
+    combo.setCurrentIndex(values.index(Climate.HARSH))
+
+    cfg = window._store.config
+    assert cfg.media.temp_swing_deg_c == 50.0
+    assert cfg.media.rh_swing_percent == 70.0
+
+    window._store.undo()
+    assert window._store.config == before
+
+
+def test_hand_tuned_swings_read_back_as_custom(window):
+    from aops.core.enums import Climate
+    from aops.core.media import detect_climate
+
+    window._store.update_section("media", temp_swing_deg_c=17.0)
+    window._controller.recompute()
+    assert detect_climate(window._store.config.media) is Climate.CUSTOM
+    assert "Custom" in window._panels["media"].climate_note.text() or (
+        "hand" in window._panels["media"].climate_note.text()
+    )
+
+
+def test_a_harsher_climate_predicts_more_drift(window):
+    """The picker must actually reach the accuracy model, or it is decoration."""
+    from aops.core.enums import Climate
+    from aops.core.media import CLIMATE_SWINGS
+    from aops.core.stats import derive
+
+    def drift(climate):
+        window._panels["media"]._apply_climate_choice(climate)
+        return derive(window._store.config).accuracy.environmental_drift_mm
+
+    assert drift(Climate.HARSH) > drift(Climate.CONDITIONED)
+    assert set(CLIMATE_SWINGS[Climate.HARSH]) == {"temp_swing_deg_c", "rh_swing_percent"}
+
+
 # -- the test-page coupon ---------------------------------------------------
 
 

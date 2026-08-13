@@ -187,6 +187,53 @@ class PaperPreset(StrEnum):
         return self.value
 
 
+class Climate(StrEnum):
+    """Where the machine stands, as a view of the environment swing fields.
+
+    "Humidity swing 40 %" is a question for a meteorologist; "which room does
+    the machine stand in" anyone can answer. Like `PrintStyle`, this is not a
+    stored field - it is derived from `rh_swing_percent` and
+    `temp_swing_deg_c` by `detect_climate`, and selecting one writes them, so
+    the plain choice and the expert numbers can never disagree. Hand-tuned
+    swings simply read as CUSTOM.
+    """
+
+    CONDITIONED = "conditioned"
+    FACTORY = "factory"
+    HARSH = "harsh"
+    CUSTOM = "custom"
+
+    @property
+    def display_name(self) -> str:
+        return {
+            Climate.CONDITIONED: "Climate-controlled room",
+            Climate.FACTORY: "Factory floor",
+            Climate.HARSH: "Unconditioned / harsh",
+            Climate.CUSTOM: "Custom",
+        }[self]
+
+    @property
+    def description(self) -> str:
+        return {
+            Climate.CONDITIONED: (
+                "Heated and cooled space: metrology room, lab, climate-controlled "
+                "workshop. Assumes 10 degC and 20 %RH of seasonal swing."
+            ),
+            Climate.FACTORY: (
+                "A typical production hall: heated but not tightly controlled. "
+                "Assumes 30 degC and 40 %RH of swing - the shipped default."
+            ),
+            Climate.HARSH: (
+                "Unconditioned shed, washdown area, near loading doors or under a "
+                "roof outdoors. Assumes 50 degC and 70 %RH of swing."
+            ),
+            Climate.CUSTOM: (
+                "The swing numbers were set by hand and match no named "
+                "environment. Set them in the Advanced media section."
+            ),
+        }[self]
+
+
 class PrintStyle(StrEnum):
     """How much page furniture is printed around the symbols.
 

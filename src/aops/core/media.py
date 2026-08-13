@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from math import floor
 
 from aops.core.config import MediaConfig, PrinterConfig
-from aops.core.enums import Media, PrintMethod, Ribbon, TapeMounting
+from aops.core.enums import Climate, Media, PrintMethod, Ribbon, TapeMounting
 from aops.core.units import MM_PER_INCH
 
 
@@ -145,6 +145,28 @@ def bond_strain_ppm(media: MediaConfig) -> float:
     if media.mounting is not TapeMounting.CONTINUOUS_BOND:
         return 0.0
     return abs(media.cte_mismatch_ppm_per_c) * media.temp_swing_deg_c
+
+
+#: The environment swings each named climate stands for. FACTORY is the
+#: shipped default, so a fresh configuration reads as a named climate rather
+#: than as Custom. Mirrors `STYLE_FLAGS` in `core.design`: the plain choice is
+#: a view of the numbers, never a second copy of them.
+CLIMATE_SWINGS: dict[Climate, dict[str, float]] = {
+    Climate.CONDITIONED: {"temp_swing_deg_c": 10.0, "rh_swing_percent": 20.0},
+    Climate.FACTORY: {"temp_swing_deg_c": 30.0, "rh_swing_percent": 40.0},
+    Climate.HARSH: {"temp_swing_deg_c": 50.0, "rh_swing_percent": 70.0},
+}
+
+
+def detect_climate(media: MediaConfig) -> Climate:
+    """Which named climate the swing fields describe, or CUSTOM."""
+    for climate, swings in CLIMATE_SWINGS.items():
+        if all(
+            abs(getattr(media, field) - value) < 1e-9
+            for field, value in swings.items()
+        ):
+            return climate
+    return Climate.CUSTOM
 
 
 #: Calibration bars are sized in whole centimetres: "measure 270.0 mm" is a

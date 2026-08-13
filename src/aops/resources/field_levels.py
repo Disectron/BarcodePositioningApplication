@@ -79,6 +79,10 @@ SIMPLE_FIELDS: Final[frozenset[str]] = frozenset(
         # -- what it is printed on -----------------------------------------
         "paper.preset",
         "media.media",
+        # Virtual: the climate picker that writes the temperature and humidity
+        # swings, so the environment question is answerable in Simple without
+        # knowing what a swing is.
+        "media.climate",
         # -- how it leaves the building ------------------------------------
         # design.style is a virtual row (there is no stored style; the picker
         # writes the switches it stands for). Plain codes versus full page

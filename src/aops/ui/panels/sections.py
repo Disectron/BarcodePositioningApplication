@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QPushButton
 from aops.core.config import AopsConfig
 from aops.core.design import STYLE_FLAGS, detect_style
 from aops.core.enums import (
+    Climate,
     ContinuousStrategy,
     Datum,
     Direction,
@@ -28,6 +29,7 @@ from aops.core.enums import (
     TapeMounting,
     VerifyMode,
 )
+from aops.core.media import CLIMATE_SWINGS, detect_climate
 from aops.core.motion import frames_on_a_code, motion_limits
 from aops.core.positions import end_index_for_travel, travel_mm
 from aops.core.stats import DerivedGeometry
@@ -600,6 +602,26 @@ class MediaPanel(ConfigPanel):
             tooltip="Thermal transfer only. Resin on polyester is the 5+ year choice.",
         )
         self.add_row("adhesive_backed", "", make_check("Self-adhesive backing", cfg.media.adhesive_backed))
+
+        # The plain question the two swing fields below actually ask. A
+        # virtual row, like the print style: nothing is stored, the choice
+        # writes the numbers and hand-tuned numbers read back as Custom.
+        self.climate_combo = make_combo(
+            [(c.display_name, c) for c in Climate], detect_climate(cfg.media)
+        )
+        self.add_virtual_row(
+            "media.climate", "Environment", self.climate_combo,
+            self._apply_climate_choice,
+            tooltip=(
+                "Where the machine stands. Sets the temperature and humidity "
+                "swings the accuracy model uses - a climate-controlled room "
+                "moves the strip a fraction of what an unconditioned shed "
+                "does.\n\nThe exact numbers live in Advanced; editing them by "
+                "hand shows here as Custom."
+            ),
+        )
+        self.climate_note = self.add_note("")
+
         self.add_row(
             "rh_swing_percent", "Humidity swing",
             make_double(cfg.media.rh_swing_percent, minimum=0.0, maximum=100.0, step=5.0, decimals=0),
@@ -680,8 +702,22 @@ class MediaPanel(ConfigPanel):
         scale = cfg.printer.derived_scale_percent(nominal)
         self._store.update_section("printing", scale_percent=round(scale, 3))
 
+    def _apply_climate_choice(self, climate: object) -> None:
+        """Write the swings the chosen climate stands for, as one undo step."""
+        swings = CLIMATE_SWINGS.get(climate)
+        if swings is not None:
+            self._store.update_section("media", **swings)
+
     def load(self, cfg: AopsConfig, derived: DerivedGeometry | None) -> None:
         super().load(cfg, derived)
+        climate = detect_climate(cfg.media)
+        values = getattr(self.climate_combo, COMBO_VALUES, [])
+        if climate in values:
+            index = values.index(climate)
+            if index != self.climate_combo.currentIndex():
+                self.climate_combo.setCurrentIndex(index)
+        self.climate_note.setText(climate.description)
+
         self.apply_button.setEnabled(
             abs(cfg.printer.measured_calibration_mm - cfg.printing.calibration_length_mm) > 1e-6
         )
