@@ -50,6 +50,7 @@ control unless the software asks about them.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import floor
 
 from aops.core.config import MediaConfig, PrinterConfig
 from aops.core.enums import Media, PrintMethod, Ribbon, TapeMounting
@@ -144,6 +145,26 @@ def bond_strain_ppm(media: MediaConfig) -> float:
     if media.mounting is not TapeMounting.CONTINUOUS_BOND:
         return 0.0
     return abs(media.cte_mismatch_ppm_per_c) * media.temp_swing_deg_c
+
+
+#: Calibration bars are sized in whole centimetres: "measure 270.0 mm" is a
+#: number a steel rule answers cleanly, "measure 276.3 mm" is not.
+CALIBRATION_ROUND_MM: float = 10.0
+
+
+def max_calibration_length_mm(usable_width_mm: float, scale_factor: float) -> float:
+    """Longest clean calibration bar the sheet can carry.
+
+    The bar is the instrument that measures the printer, and its accuracy
+    scales with its length: the residual after reading a steel rule to 0.5 mm
+    is 0.5/length, so a bar spanning the page calibrates finer than a short
+    one for free. Floored to a whole centimetre, and computed against the
+    *drawn* length (the bar scales with the printer correction), so the answer
+    still fits after a calibration is applied.
+    """
+    if usable_width_mm <= 0.0 or scale_factor <= 0.0:
+        return 0.0
+    return floor(usable_width_mm / scale_factor / CALIBRATION_ROUND_MM) * CALIBRATION_ROUND_MM
 
 
 def residual_scale_error(printer: PrinterConfig, nominal_mm: float) -> float:

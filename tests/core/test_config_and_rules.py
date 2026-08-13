@@ -249,6 +249,68 @@ def test_severity_ordering_and_blocking():
     assert report.sorted()[0].severity == report.max_severity
 
 
+# -- the calibration bar should span the sheet ------------------------------
+
+
+def test_the_longest_clean_bar_for_a4_landscape_is_270():
+    from aops.core.media import max_calibration_length_mm
+
+    assert max_calibration_length_mm(277.0, 1.0) == 270.0
+    # The bar is drawn scaled, so a 2x scale halves what fits.
+    assert max_calibration_length_mm(277.0, 2.0) == 130.0
+    assert max_calibration_length_mm(0.0, 1.0) == 0.0
+    assert max_calibration_length_mm(277.0, 0.0) == 0.0
+
+
+def test_a_short_bar_on_a_wide_sheet_gets_a_nudge_with_a_fix():
+    report = _report(AopsConfig())
+    finding = next(f for f in report.findings if f.rule_id == "PRN-011")
+    assert finding.severity is Severity.INFO  # 200 mm is not a defect
+    assert finding.fix is not None
+    assert finding.fix.value == 270.0
+
+    fixed = dc.replace(
+        AopsConfig(),
+        printing=dc.replace(AopsConfig().printing, calibration_length_mm=270.0),
+    )
+    fixed_report = _report(fixed)
+    assert "PRN-011" not in _ids(fixed_report)
+    # And the full-width bar still fits the sheet - the fix must not trade the
+    # nudge for a clipped-bar error.
+    assert "PAG-003" not in _ids(fixed_report)
+
+
+def test_the_longer_bar_buys_the_accuracy_it_promises():
+    cfg = dc.replace(
+        AopsConfig(),
+        printing=dc.replace(AopsConfig().printing, calibration_length_mm=270.0),
+    )
+    assert derive(cfg).accuracy.residual_scale_error == pytest.approx(0.5 / 270.0)
+
+
+def test_no_nudge_where_the_paper_cannot_do_better():
+    """Portrait A4 fits only 190 mm - the 200 mm bar is already clipped, which
+    is PAG-003's error to own; suggesting a longer bar there would be absurd.
+
+    (A roll is deliberately NOT this case: tiles run along the roll, so a 4-in
+    roll can carry a ~970 mm bar and the nudge is legitimate physics there.)
+    """
+    portrait = dc.replace(
+        AopsConfig(),
+        paper=dc.replace(AopsConfig().paper, orientation=Orientation.PORTRAIT),
+    )
+    ids = _ids(_report(portrait))
+    assert "PRN-011" not in ids
+    assert "PAG-003" in ids
+
+
+def test_no_nudge_when_the_bar_is_not_printed():
+    cfg = dc.replace(
+        AopsConfig(), output=dc.replace(AopsConfig().output, calibration_bar=False)
+    )
+    assert "PRN-011" not in _ids(_report(cfg))
+
+
 # -- axis travel, the number an engineer actually has -----------------------
 
 

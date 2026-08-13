@@ -168,6 +168,25 @@ def test_the_pitch_floor_matches_the_validators_not_something_stricter():
     assert d.position_formula == "P [mm] = Index x 10.000"
 
 
+def test_the_calibration_bar_spans_the_sheet():
+    """The bar is the instrument that measures the printer; the solver makes
+    it as long as the paper allows, because length is its accuracy."""
+    solution = solve(job(), travel_mm=2000.0)
+    assert solution.config.printing.calibration_length_mm == 270.0  # A4 landscape
+    bar = next(d for d in solution.decisions
+               if d.field == "printing.calibration_length_mm")
+    assert "270" in bar.reason
+    assert derive(solution.config).accuracy.residual_scale_error == pytest.approx(0.5 / 270.0)
+
+
+def test_a_disabled_bar_is_not_designed(monkeypatch):
+    base = job()
+    base = dc.replace(base, output=dc.replace(base.output, calibration_bar=False))
+    solution = solve(base, travel_mm=2000.0)
+    assert solution.config.printing.calibration_length_mm == base.printing.calibration_length_mm
+    assert "printing.calibration_length_mm" not in {d.field for d in solution.decisions}
+
+
 def test_exposure_keeps_smear_within_one_module():
     solution = solve(job(speed=1500.0, distance=150.0), travel_mm=2000.0)
     cfg = solution.config

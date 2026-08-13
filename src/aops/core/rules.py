@@ -43,6 +43,7 @@ from aops.core.enums import (
 )
 from aops.core.errors import GeometryError
 from aops.core.layout.bands import solve_bands
+from aops.core.media import CALIBRATION_ROUND_MM, max_calibration_length_mm
 from aops.core.motion import EXPOSURE_MIN_US, frames_on_a_code, motion_limits
 from aops.core.payload import precision_loss_mm
 from aops.core.stats import DerivedGeometry
@@ -670,6 +671,30 @@ def prn_calibration(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterabl
                  _mm_fix("printing.calibration_length_mm", 200.0, "calibration length"))
 
 
+def prn_bar_could_span_the_page(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """A short bar on a wide sheet is accuracy left on the table.
+
+    The residual after measuring the bar to 0.5 mm is 0.5/length, so the bar
+    should be as long as the paper allows - the sheet is being printed either
+    way. A note rather than a warning: 200 mm is not a defect, just not the
+    best this paper can do.
+    """
+    if not cfg.output.calibration_bar:
+        return
+    best = max_calibration_length_mm(cfg.paper.usable_width_mm(), cfg.printing.scale_factor)
+    current = cfg.printing.calibration_length_mm
+    if best <= 0 or current <= 0 or best < current + CALIBRATION_ROUND_MM:
+        return
+    yield _f("PRN-011", Severity.INFO,
+             f"The calibration bar is {current:.0f} mm but this sheet fits "
+             f"{best:.0f} mm. A longer bar calibrates finer: measured to 0.5 mm, "
+             f"the residual is {0.5 / best * 100:.2f}% at {best:.0f} mm against "
+             f"{0.5 / current * 100:.2f}% at {current:.0f} mm.",
+             "printing.calibration_length_mm",
+             "Lengthen the bar - the page is being printed either way.",
+             _mm_fix("printing.calibration_length_mm", best, "calibration length"))
+
+
 def prn_module_dots(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     """The print-resolution criterion: a module must span enough printer dots."""
     if derived is None:
@@ -1237,6 +1262,7 @@ ALL_RULES: tuple[Rule, ...] = (
     prn_calibration,
     prn_module_dots,
     prn_dot_grid,
+    prn_bar_could_span_the_page,
     prn_splice_error,
     med_paper,
     med_drift,

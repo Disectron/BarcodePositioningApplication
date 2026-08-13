@@ -52,6 +52,7 @@ from aops.core.cell import MIN_MODULE_UM, resolve_cell
 from aops.core.config import AopsConfig
 from aops.core.dotgrid import symbol_mm_for_dots
 from aops.core.enums import Symbology
+from aops.core.media import max_calibration_length_mm
 from aops.core.motion import EXPOSURE_MIN_US, frame_limited_speed
 from aops.core.payload import required_digits
 from aops.core.positions import end_index_for_travel
@@ -335,11 +336,27 @@ def solve(
                     f"Mount further back or slow the axis."
                 )
 
+    # -- calibration bar: as long as the sheet allows ----------------------
+    printing = base.printing
+    if base.output.calibration_bar:
+        bar = max_calibration_length_mm(
+            base.paper.usable_width_mm(), base.printing.scale_factor
+        )
+        if bar > 0 and abs(bar - printing.calibration_length_mm) > 1e-9:
+            printing = dc.replace(printing, calibration_length_mm=bar)
+            decisions.append(Decision(
+                "printing.calibration_length_mm", bar,
+                f"Calibration bar {bar:.0f} mm: the longest whole-centimetre bar "
+                f"this sheet carries. Its length is the calibration's accuracy - "
+                f"measured to 0.5 mm, the residual is {0.5 / bar * 100:.2f}%.",
+            ))
+
     config = dc.replace(
         base,
         dimensions=dims,
         position=pos,
         payload=dc.replace(base.payload, digits=digits),
         scanner=scanner,
+        printing=printing,
     )
     return Solution(config=config, decisions=tuple(decisions), problems=tuple(problems))
