@@ -64,6 +64,11 @@ class UiLevel(IntEnum):
 #: Advanced for the day someone disagrees with a decision.
 SIMPLE_FIELDS: Final[frozenset[str]] = frozenset(
     {
+        # -- the job -------------------------------------------------------
+        # A virtual row: not a config field, but the Position panel's length
+        # editor, which derives the index range. Listed here so Simple mode
+        # shows it inside the panel as well as on the job bar.
+        "position.travel_mm",
         # -- the machine ---------------------------------------------------
         "scanner.axis_speed_mm_per_s",
         # -- the installation ----------------------------------------------

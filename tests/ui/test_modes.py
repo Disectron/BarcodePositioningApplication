@@ -519,6 +519,53 @@ def test_the_fix_all_button_tracks_whether_there_is_anything_to_fix(window):
     assert window._issues.fix_all_button.isEnabled()
 
 
+# -- the Simple-mode length row --------------------------------------------
+
+
+def test_the_length_row_is_a_simple_field_inside_the_position_section(window):
+    """The length editor lives in the panel too, not only on the job bar."""
+    window._set_mode(UiLevel.SIMPLE)
+    rows = window._panels["position"].rows()
+    assert "position.travel_mm" in rows
+    assert not rows["position.travel_mm"].isHidden()
+    assert not window._accordion.section("position").isHidden()
+
+
+def test_typing_a_length_adjusts_the_number_of_codes(window):
+    window._store.update_section("dimensions", pitch_mm=10.0)
+    window._controller.recompute()
+
+    panel = window._panels["position"]
+    panel.travel.setValue(2000.0)
+    window._controller.recompute()
+
+    cfg = window._store.config
+    assert cfg.position.end_index == 200  # 201 codes cover 2000 mm at 10 mm
+    assert panel.codes.text() == "201"
+
+
+def test_the_panel_length_and_the_job_bar_mirror_each_other(window):
+    window._store.update_section("dimensions", pitch_mm=10.0)
+    window._controller.recompute()
+
+    window._panels["position"].travel.setValue(1500.0)
+    window._controller.recompute()
+    assert window._job_bar.travel_spin.value() == pytest.approx(1500.0)
+
+    window._job_bar.travel_spin.setValue(500.0)
+    window._controller.recompute()
+    assert window._panels["position"].travel.value() == pytest.approx(500.0)
+
+
+def test_a_length_that_is_not_whole_codes_rounds_up(window):
+    """Stopping short leaves the axis end uncoded, so the range always covers."""
+    window._store.update_section("dimensions", pitch_mm=10.0)
+    window._controller.recompute()
+    window._panels["position"].travel.setValue(1995.0)
+    window._controller.recompute()
+    assert window._store.config.position.end_index == 200  # 2000 mm, not 1990
+
+
 # -- conflicts are put to the user -----------------------------------------
 
 

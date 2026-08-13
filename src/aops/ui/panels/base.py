@@ -94,6 +94,37 @@ class ConfigPanel(QWidget):
         connect_editor(editor, on_change)
         return row
 
+    def add_virtual_row(
+        self,
+        path: str,
+        label: str,
+        editor: QWidget,
+        on_change: Callable[[Any], None],
+        *,
+        suffix: str = "",
+        tooltip: str = "",
+    ) -> FieldRow:
+        """Add a row for a quantity that is not a config field.
+
+        Axis length is the example: the user edits a length, but what the
+        configuration stores is an index range - the panel derives one from
+        the other. The row registers under a dotted pseudo-path so mode and
+        filter visibility treat it like any other row (and `SIMPLE_FIELDS`
+        can list it), but its editor wires to the handler instead of the
+        store, and the default `load` skips it because the field does not
+        exist on the section.
+        """
+        row = FieldRow(label, editor, path, suffix=suffix, tooltip=tooltip, parent=self)
+        self._rows[path] = row
+        self._layout.addWidget(row)
+
+        def guarded(value: Any) -> None:
+            if not self._loading:
+                on_change(value)
+
+        connect_editor(editor, guarded)
+        return row
+
     def add_readout(
         self, label: str, editor: QWidget, *, suffix: str = "", tooltip: str = ""
     ) -> FieldRow:

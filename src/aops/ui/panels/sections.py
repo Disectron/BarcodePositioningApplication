@@ -29,6 +29,7 @@ from aops.core.enums import (
     VerifyMode,
 )
 from aops.core.motion import frames_on_a_code, motion_limits
+from aops.core.positions import end_index_for_travel, travel_mm
 from aops.core.stats import DerivedGeometry
 from aops.symbols.placeholders import PLACEHOLDER_REASONS
 from aops.ui.panels.base import ConfigPanel, enum_items
@@ -95,6 +96,31 @@ class PositionPanel(ConfigPanel):
 
     def build(self) -> None:
         cfg = self._store.config
+        #: Set by load(); None until the first derive lands, and the length
+        #: handler needs the cell, so it stays inert until then.
+        self._derived: DerivedGeometry | None = None
+
+        # The length row comes first: it is the number the user actually has,
+        # and in Simple mode it is the only editable thing in this section -
+        # the index range below is derived from it. Same mechanism as the job
+        # bar's travel box, and the two mirror each other.
+        self.travel = make_double(0.0, minimum=0.0, maximum=1_000_000.0, step=10.0,
+                                  decimals=1)
+        self.add_virtual_row(
+            "position.travel_mm", "Length to cover", self.travel,
+            self._on_travel_edited,
+            suffix="mm",
+            tooltip=(
+                "How much of the axis the strip must cover - the number you "
+                "measured on the machine.\n\n"
+                "Type it and the number of codes adjusts itself: the range is "
+                "rounded up to the next whole code, because stopping short "
+                "would leave the end of the axis with no code over it. The "
+                "readouts below show what it produced. Same value as the "
+                "Axis travel box in the bar above; edit either."
+            ),
+        )
+
         self.add_row("start_index", "Start index", make_int(cfg.position.start_index, maximum=999999))
         self.add_row("end_index", "End index", make_int(cfg.position.end_index, maximum=999999))
         self.add_row(
@@ -143,9 +169,26 @@ class PositionPanel(ConfigPanel):
         self.length = make_readonly("")
         self.add_readout("Strip length", self.length, suffix="mm")
 
+    def _on_travel_edited(self, value: float) -> None:
+        """Turn the length into an index range, exactly as the job bar does."""
+        derived = self._derived
+        if derived is None:
+            return
+        pos = self._store.config.position
+        end = end_index_for_travel(value, pos, derived.cell)
+        if end != pos.end_index:
+            self._store.update_section("position", end_index=end)
+
     def load(self, cfg: AopsConfig, derived: DerivedGeometry | None) -> None:
         super().load(cfg, derived)
+        #: Kept so the length row can convert against the current cell.
+        self._derived = derived
         if derived is not None:
+            # Mirror the achieved travel, guarded by refresh()'s loading flag
+            # so the write-back cannot re-trigger the edit handler.
+            achieved = travel_mm(cfg.position, derived.cell)
+            if abs(self.travel.value() - achieved) > 5e-2:
+                self.travel.setValue(achieved)
             self.formula.setText(derived.position_formula)
             self.codes.setText(str(derived.code_count))
             self.length.setText(f"{derived.total_length_mm:.1f}")
