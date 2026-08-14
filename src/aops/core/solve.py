@@ -18,6 +18,14 @@ This module is that computation. Given the job, it derives the geometry:
     quiet zone    = the symbology's own rule (1 module for Data Matrix)
     pitch         = symbol + quiet zones + cutting tolerance, rounded up to a
                     clean number, checked against the reader's window
+    then the code GROWS back into the pitch: rounding the pitch up to a clean
+    multiple leaves slack, and a module sitting at its floor spends that slack
+    on white that buys nothing. The module is enlarged, whole dot by whole
+    dot, until the code plus its clearances fills the spacing (or the module
+    reaches a generous 1 mm) - a larger module prints more cleanly and reads
+    from farther away at the same strip density. The first version skipped
+    this and, on a job with no reader constraint stated, delivered 3.4 mm
+    codes designed for a reader 33 mm from the tape.
     exposure      = module / speed  (the vendor's formula, rearranged)
     end index     = from the travel
     digits        = from the largest position
@@ -48,7 +56,7 @@ import dataclasses as dc
 from dataclasses import dataclass
 from math import ceil, floor, radians, tan
 
-from aops.core.cell import MIN_MODULE_UM, resolve_cell
+from aops.core.cell import GENEROUS_MODULE_UM, MIN_MODULE_UM, resolve_cell
 from aops.core.config import AopsConfig
 from aops.core.dotgrid import symbol_mm_for_dots
 from aops.core.enums import Symbology
@@ -204,42 +212,87 @@ def solve(
 
     module_mm, binding = max(floors, key=lambda f: f[0])
 
+    quiet_modules = QUIET_MODULES.get(base.symbol.symbology, 1)
+    n = max(1, scn.min_codes_in_view)
+
+    def _snap(dots_count: int) -> tuple[float, float, float]:
+        """Symbol, quiet and module for a whole-dot module, rounded exactly
+        as they will be stored - the growth loop below must judge candidates
+        by the numbers the validator will later see, not by ideals.
+
+        Stored at three decimals like every other authored dimension - but
+        rounded UP, not to nearest. Round-to-nearest can shave half a
+        thousandth off, and a symbol stored a hair below "five dots per
+        module" fails the very floor it was designed to sit on.
+        """
+        sym = symbol_mm_for_dots(dots_count, matrix_cols, dpi)
+        sym = ceil(sym * 1000.0 - 1e-9) / 1000.0
+        mod = sym / matrix_cols
+        return sym, _round_up_mm(quiet_modules * mod, 0.1), mod
+
     # -- snap the symbol up to the dot grid --------------------------------
     if dpi > 0:
         dots = max(1, ceil(module_mm / mm_per_dot(dpi) - 1e-9))
-        symbol_mm = symbol_mm_for_dots(dots, matrix_cols, dpi)
+        symbol_mm, quiet_mm, module_mm = _snap(dots)
         grid_note = f", snapped up to {dots} whole printer dots"
     else:
-        symbol_mm = module_mm * matrix_cols
+        dots = 0
+        symbol_mm = ceil(module_mm * matrix_cols * 1000.0 - 1e-9) / 1000.0
+        module_mm = symbol_mm / matrix_cols
+        quiet_mm = _round_up_mm(quiet_modules * module_mm, 0.1)
         grid_note = ""
-    # Stored at three decimals like every other authored dimension - but
-    # rounded UP, not to nearest. Round-to-nearest can shave half a thousandth
-    # off, and a symbol stored a hair below "five dots per module" fails the
-    # very floor it was designed to sit on.
-    symbol_mm = ceil(symbol_mm * 1000.0 - 1e-9) / 1000.0
-    module_mm = symbol_mm / matrix_cols
-    decisions.append(Decision(
-        "dimensions.symbol_size_mm", round(symbol_mm, 3),
-        f"Code size {symbol_mm:.3f} mm: the binding constraint was {binding}"
-        f"{grid_note}. {matrix_cols} modules across.",
-    ))
-
-    # -- quiet zone: the symbology's own rule ------------------------------
-    quiet_modules = QUIET_MODULES.get(base.symbol.symbology, 1)
-    quiet_mm = _round_up_mm(quiet_modules * module_mm, 0.1)
-    decisions.append(Decision(
-        "dimensions.quiet_zone_mm", round(quiet_mm, 3),
-        f"Quiet zone {quiet_mm:.1f} mm: {base.symbol.symbology.display_name} "
-        f"mandates {quiet_modules} module(s) of clear border.",
-    ))
 
     # -- pitch: as fine as the splice allows, in clean numbers -------------
     # The white gap between two codes must hold the larger of the quiet zones
     # and the guillotine's tolerance - not their sum. A cut may wander into
     # quiet-zone *territory* so long as the code keeps its quiet width of
     # white to the new edge, which is exactly how rule GEO-013 counts it.
+    # Chosen from the FLOOR-sized symbol, so the pitch - and the position
+    # formula - stays as fine as the constraints permit.
     pitch_floor = symbol_mm + max(2.0 * quiet_mm, CUT_TOLERANCE_MM)
     pitch_mm = _round_up_mm(pitch_floor, PITCH_STEP_MM)
+
+    # -- grow the code into the spacing's slack ----------------------------
+    # Rounding the pitch up left white inside every cell that nothing claims.
+    # A module at its floor spends that slack on nothing; a module grown to
+    # fill it prints more cleanly and reads from farther away, at the same
+    # strip density. Growth stops where the cell, the reader's window, or a
+    # generous 1 mm module says stop.
+    grown = dots
+    if dpi > 0:
+        cap_mm = max(module_mm, GENEROUS_MODULE_UM / 1000.0)
+        while True:
+            sym, q, mod = _snap(grown + 1)
+            if mod > cap_mm + 1e-9:
+                break
+            if sym + max(2.0 * q, CUT_TOLERANCE_MM) > pitch_mm + 1e-9:
+                break
+            if fov_h > 0.0 and n * pitch_mm + sym > fov_h + 1e-9:
+                break
+            grown += 1
+        if grown > dots:
+            symbol_mm, quiet_mm, module_mm = _snap(grown)
+
+    growth_note = (
+        f", then grown to {grown} dots to fill the {pitch_mm:.0f} mm spacing - "
+        f"unclaimed white buys nothing, and a larger module prints and reads "
+        f"better"
+        if grown > dots
+        else ""
+    )
+    decisions.append(Decision(
+        "dimensions.symbol_size_mm", round(symbol_mm, 3),
+        f"Code size {symbol_mm:.3f} mm: the binding constraint was {binding}"
+        f"{grid_note}{growth_note}. {matrix_cols} modules across.",
+    ))
+
+    # -- quiet zone: the symbology's own rule ------------------------------
+    decisions.append(Decision(
+        "dimensions.quiet_zone_mm", round(quiet_mm, 3),
+        f"Quiet zone {quiet_mm:.1f} mm: {base.symbol.symbology.display_name} "
+        f"mandates {quiet_modules} module(s) of clear border.",
+    ))
+
     decisions.append(Decision(
         "dimensions.pitch_mm", round(pitch_mm, 3),
         f"Code spacing {pitch_mm:.0f} mm: the code plus a {CUT_TOLERANCE_MM:.0f} mm "
@@ -249,7 +302,6 @@ def solve(
     ))
 
     # -- does the redundancy asked for fit the window? ---------------------
-    n = max(1, scn.min_codes_in_view)
     if fov_h > 0.0:
         needed = n * pitch_mm + symbol_mm
         if needed > fov_h:

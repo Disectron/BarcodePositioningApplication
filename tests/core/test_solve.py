@@ -221,6 +221,89 @@ def test_identity_and_media_pass_through_untouched():
     assert solution.config.output == base.output
 
 
+# -- the code grows into the pitch ------------------------------------------
+
+
+def test_the_code_grows_to_fill_the_pitch_budget():
+    """Rounding the pitch up to a clean multiple leaves slack inside every
+    cell. A module left at its floor spends that slack on white that buys
+    nothing; the solver must grow the code into it.
+
+    At 600 dpi with no reader constraint the floor is the 0.30 mm practical
+    minimum - 8 dots, a 3.387 mm code. The 10 mm pitch it earns has room for
+    16-dot modules: same pitch, same formula, twice the module.
+    """
+    solution = solve(job(dpi=600), travel_mm=2000.0)
+    dims = solution.config.dimensions
+    assert dims.pitch_mm == pytest.approx(10.0)
+    assert dims.symbol_size_mm == pytest.approx(6.774, abs=1e-3)
+    reason = next(d for d in solution.decisions
+                  if d.field == "dimensions.symbol_size_mm").reason
+    assert "grown" in reason
+
+    # Maximality: one more dot per module would no longer fit the cell.
+    from aops.core.dotgrid import symbol_mm_for_dots
+
+    bigger = symbol_mm_for_dots(17, 10, 600)
+    quiet = 1 * bigger / 10  # Data Matrix: one module
+    assert bigger + max(2.0 * quiet, 3.0) > dims.pitch_mm
+
+
+def test_growth_stops_at_the_readers_window():
+    """Three codes in view through a 40 mm mount leaves ~36 mm of window;
+    the code may grow only while the redundancy still fits it."""
+    solution = solve(job(dpi=600, distance=40.0, codes_in_view=3), travel_mm=2000.0)
+    assert solution.feasible
+    dims = solution.config.dimensions
+    assert dims.pitch_mm == pytest.approx(10.0)
+    # Grown past the 3.387 mm floor, but held below the unconstrained 6.774.
+    assert 3.4 < dims.symbol_size_mm < 6.1
+    assert 3 * dims.pitch_mm + dims.symbol_size_mm <= 36.1
+
+
+def test_growth_never_passes_a_generous_module():
+    """Past 1 mm a module is spending strip width on nothing - the growth
+    stops there even when the cell still has room."""
+    solution = solve(job(dpi=600, distance=200.0), travel_mm=2000.0)
+    dims = solution.config.dimensions
+    module = dims.symbol_size_mm / 10
+    assert module <= 1.0 + 1e-9
+    assert dims.pitch_mm - dims.symbol_size_mm >= 3.0 - 1e-9
+
+
+def test_a_job_with_no_reader_constraint_still_designs_readable_codes():
+    """The regression from the field: a default scanner (no datasheet optics,
+    no mounting distance) at 600 dpi produced 3.387 mm codes with 0.34 mm
+    modules - a strip sized for a reader 33 mm from the tape. The pitch's
+    slack was sitting there unspent."""
+    cfg = dc.replace(AopsConfig(), printer=dc.replace(AopsConfig().printer, dpi=600))
+    solution = solve(cfg, travel_mm=1000.0)
+    dims = solution.config.dimensions
+    assert dims.pitch_mm == pytest.approx(10.0)
+    assert dims.symbol_size_mm >= 6.7
+    d = derive(solution.config)
+    assert d.position_formula == "P [mm] = Index x 10.000"
+
+
+def test_a_qr_job_is_sized_for_qr_not_for_data_matrix():
+    """QR version 1 is 21 modules across. Solved with Data Matrix's 10, the
+    real module lands at half the design and the quiet zone at a quarter of
+    QR's four-module mandate - the exact strip a field export shipped."""
+    from aops.core.enums import Symbology
+
+    base = AopsConfig()
+    cfg = dc.replace(
+        base,
+        symbol=dc.replace(base.symbol, symbology=Symbology.QR),
+        printer=dc.replace(base.printer, dpi=600),
+    )
+    solution = solve(cfg, travel_mm=1000.0, matrix_cols=21)
+    dims = solution.config.dimensions
+    module = dims.symbol_size_mm / 21
+    assert module * 600 / 25.4 >= DESIGN_MODULE_DOTS - 1e-6
+    assert dims.quiet_zone_mm >= 4 * module - 1e-9
+
+
 # -- honest infeasibility ---------------------------------------------------
 
 

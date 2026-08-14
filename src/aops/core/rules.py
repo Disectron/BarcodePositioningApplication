@@ -373,6 +373,29 @@ def sym_qr_ecc(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Fin
                  "symbol.qr_ecc", "Level M is usually the right trade-off here.")
 
 
+def sym_qr_vs_datamatrix(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """A short numeric payload in a QR spends 21 modules where Data Matrix
+    spends about 10 - at the same module size the code is twice as wide, so
+    the strip needs a coarser pitch for no extra robustness. Information, not
+    a warning: QR is a legitimate choice (phones read it), but a positioning
+    strip is read by a fixed scanner, and the user should know what the choice
+    costs.
+    """
+    if cfg.symbol.symbology is not Symbology.QR:
+        return
+    if cfg.payload.digits > 6 or cfg.payload.prefix or cfg.payload.suffix:
+        return
+    yield _f("SYM-005", Severity.INFO,
+             f"QR Code needs at least 21 modules across; Data Matrix carries "
+             f"{cfg.payload.digits} digits in 10. At the same module size the code is "
+             f"half as wide, which buys a finer pitch or a farther-mounted reader.",
+             "symbol.symbology",
+             "Data Matrix ECC200 is the denser choice for short numeric payloads. "
+             "Re-run Design strip after switching.",
+             Fix(field="symbol.symbology", value=Symbology.DATA_MATRIX,
+                 label="Switch to Data Matrix"))
+
+
 # --------------------------------------------------------------------------
 # PAG - pagination
 # --------------------------------------------------------------------------
@@ -1271,6 +1294,7 @@ ALL_RULES: tuple[Rule, ...] = (
     sym_available,
     sym_quiet_zone,
     sym_qr_ecc,
+    sym_qr_vs_datamatrix,
     pag_fit,
     pag_height,
     pag_calibration_fits,

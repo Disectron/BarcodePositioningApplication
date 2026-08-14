@@ -27,7 +27,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 
 from aops.core.enums import Symbology
-from aops.core.errors import EncoderUnavailable, SymbologyNotImplemented
+from aops.core.errors import SymbologyNotImplemented
 from aops.core.matrix import ModuleMatrix, to_rects
 
 
@@ -144,16 +144,32 @@ class SymbolCache:
             self._misses = 0
 
 
+#: Narrowest matrix each symbology can produce - the probe's fallback when
+#: encoding fails. Data Matrix starts at 10x10; QR has no version below 1,
+#: which is 21x21. The old fallback was a bare 10 for everything, and a
+#: solver working from it sized QR modules at half their real span.
+FALLBACK_COLS: dict[Symbology, int] = {
+    Symbology.DATA_MATRIX: 10,
+    Symbology.QR: 21,
+}
+
+
 def probe_matrix_cols(
-    cache: SymbolCache, symbology: Symbology, sample_payload: str, fallback: int = 10
+    cache: SymbolCache,
+    symbology: Symbology,
+    sample_payload: str,
+    fallback: int | None = None,
 ) -> int:
     """Module count across for a representative payload.
 
     Needed early - the module size feeds validation, the scanner recommendation
     and the print-resolution check - but must never take down the UI when an
-    encoder is unavailable, so failures fall back to a sensible default.
+    encoder is unavailable, so failures fall back to the symbology's own
+    minimum matrix rather than a Data Matrix-shaped constant.
     """
     try:
         return cache.get(symbology, sample_payload).cols
-    except (EncoderUnavailable, SymbologyNotImplemented, Exception):
-        return fallback
+    except Exception:
+        if fallback is not None:
+            return fallback
+        return FALLBACK_COLS.get(symbology, 10)

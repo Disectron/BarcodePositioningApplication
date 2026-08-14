@@ -154,3 +154,21 @@ def test_cache_key_excludes_geometry(dm: DataMatrixEncoder):
     first = cache.get(Symbology.DATA_MATRIX, "010500")
     second = cache.get(Symbology.DATA_MATRIX, "010500")
     assert first is second
+
+
+# -- the probe's fallback ---------------------------------------------------
+
+
+def test_probe_falls_back_to_the_symbologys_own_minimum():
+    """An empty registry cannot encode anything, so the probe answers from
+    knowledge instead: the smallest matrix the symbology can produce. The old
+    fallback was a bare 10 for everything - Data Matrix's minimum - and a
+    solver working from it sized QR modules at half their real span.
+    """
+    from aops.symbols.cache import probe_matrix_cols
+
+    empty = SymbolCache({})
+    assert probe_matrix_cols(empty, Symbology.DATA_MATRIX, "0000") == 10
+    assert probe_matrix_cols(empty, Symbology.QR, "0000") == 21
+    # An explicit fallback still wins, for callers that know better.
+    assert probe_matrix_cols(empty, Symbology.QR, "0000", fallback=7) == 7

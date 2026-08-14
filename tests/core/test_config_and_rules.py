@@ -361,3 +361,37 @@ def test_a_single_code_spans_no_travel():
 
     cell = resolve_cell(DimensionConfig(pitch_mm=25.0, symbol_size_mm=10.0))
     assert travel_mm(PositionConfig(start_index=0, end_index=0), cell) == 0.0
+
+
+# -- SYM-005: the cost of QR on a positioning strip -------------------------
+
+
+def test_qr_on_a_short_numeric_payload_carries_the_datamatrix_hint():
+    """QR spends 21 modules where Data Matrix spends 10. The user may still
+    choose QR - phones read it - but the choice should come with its price
+    tag and a one-click way to the denser symbology."""
+    base = AopsConfig()
+    cfg = dc.replace(base, symbol=dc.replace(base.symbol, symbology=Symbology.QR))
+    report = run_rules(ALL_RULES, cfg, derive(cfg))
+    finding = next(f for f in report.findings if f.rule_id == "SYM-005")
+    assert finding.severity is Severity.INFO
+    assert finding.fix is not None
+    assert finding.fix.value is Symbology.DATA_MATRIX
+
+
+def test_the_datamatrix_hint_knows_when_qr_earns_its_keep():
+    """Data Matrix itself, long payloads, and decorated payloads (where the
+    10x10 claim no longer holds) stay hint-free."""
+    base = AopsConfig()
+
+    ids = {f.rule_id for f in run_rules(ALL_RULES, base, derive(base)).findings}
+    assert "SYM-005" not in ids
+
+    qr = dc.replace(base, symbol=dc.replace(base.symbol, symbology=Symbology.QR))
+    long = dc.replace(qr, payload=dc.replace(qr.payload, digits=8))
+    ids = {f.rule_id for f in run_rules(ALL_RULES, long, derive(long)).findings}
+    assert "SYM-005" not in ids
+
+    decorated = dc.replace(qr, payload=dc.replace(qr.payload, prefix="P"))
+    ids = {f.rule_id for f in run_rules(ALL_RULES, decorated, derive(decorated)).findings}
+    assert "SYM-005" not in ids
