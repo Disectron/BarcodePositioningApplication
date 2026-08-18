@@ -172,6 +172,57 @@ def cut_marks(
     return out
 
 
+def splice_joints(
+    page: PageLayout,
+    total_pages: int,
+    band_top_mm: float,
+    band_bottom_mm: float,
+    printing: PrintConfig,
+    *,
+    measurer: TextMeasurer | None = None,
+) -> list[Primitive]:
+    """Labelled trim boundaries where this row meets its neighbours.
+
+    Every inter-row joint prints the same number on both mating edges:
+    "SPLICE 3" at the right edge of row 3 and again at the left edge of
+    row 4. The installer cuts along both lines and joins them - the
+    matching numbers say which edge mates with which, and the line itself
+    is the guide that keeps the pitch true across the joint. The strip's
+    outer ends carry START and END instead, so every cut-out row has an
+    explicit boundary at both ends.
+
+    The line is dashed through the band (solid ink beside a code could
+    read as structure) and solid in the short overhangs above and below.
+    It sits exactly on the cell boundary, which the splice guarantee
+    keeps in white and the margin keeps a full quiet zone clear of any
+    symbol - and a correct cut removes the line entirely.
+
+    Gated on its own switch rather than on ``printing.cut_marks``: the
+    Labelled style keeps cut marks off but still has a strip to assemble.
+    Only the Plain style - symbols and nothing else, by contract - turns
+    these off.
+    """
+    if not printing.splice_labels:
+        return []
+    measurer = measurer or DEFAULT_METRICS
+    length_mm = um_to_mm(page.content_length_um)
+    n = page.strip_page_number
+    overhang = 2.2
+    out: list[Primitive] = []
+
+    def edge(x: float, label: str, *, align_right: bool) -> None:
+        out.append(Line(x, band_top_mm - overhang, x, band_top_mm, S.CUT_MARK))
+        out.append(Line(x, band_top_mm, x, band_bottom_mm, S.CUT_LINE))
+        out.append(Line(x, band_bottom_mm, x, band_bottom_mm + overhang, S.CUT_MARK))
+        w = measurer.width_mm(label, S.RULER_LABEL.role, S.RULER_LABEL.size_pt)
+        tx = x - w - 1.0 if align_right else x + 1.0
+        out.append(Text(tx, band_top_mm - 0.8, label, S.RULER_LABEL))
+
+    edge(0.0, "START" if n == 1 else f"SPLICE {n - 1}", align_right=False)
+    edge(length_mm, "END" if n == total_pages else f"SPLICE {n}", align_right=True)
+    return out
+
+
 def alignment_arrows(
     x0_mm: float, x1_mm: float, y_mm: float, printing: PrintConfig, *, forward: bool = True
 ) -> list[Primitive]:

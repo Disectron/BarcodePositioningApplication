@@ -119,9 +119,12 @@ def test_plain_prints_symbols_and_nothing_else():
 
 
 def test_labelled_adds_exactly_one_label_per_symbol():
+    """Plus the two splice boundaries: Labelled keeps cut marks off but still
+    has a multi-sheet strip to assemble, so each page carries its two labelled
+    trim edges - 4 primitives each (three line segments and the label)."""
     plain = first_page_primitives(apply_style(SHORT, PrintStyle.PLAIN))
     labelled = first_page_primitives(apply_style(SHORT, PrintStyle.LABELLED))
-    assert labelled == 2 * plain
+    assert labelled == 2 * plain + 8
 
 
 def test_engineering_draws_substantially_more():

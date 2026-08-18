@@ -185,6 +185,10 @@ class PrintConfig:
     #: Off by default: ink drawn across the strip band confuses a scanner.
     cut_line_across_strip: bool = False
     alignment_arrows: bool = True
+    #: Labelled trim boundaries at every row joint: the same SPLICE number on
+    #: both edges that mate, START and END at the strip's ends. The assembly
+    #: mechanism for a tiled strip - only the Plain style turns it off.
+    splice_labels: bool = True
     splice_mode: SpliceMode = SpliceMode.BUTT
     splice_overlap_mm: float = 0.0
 

@@ -495,6 +495,14 @@ FIELD_HINTS: dict[str, str] = {
         "It must stay within the white space, or the overlap will cover a "
         "code's clear border and stop it reading."
     ),
+    "printing.splice_labels": (
+        "Labelled trim boundaries at every row joint.\n\n"
+        "Each joint prints the same SPLICE number on the two edges that mate, "
+        "and the strip's outer ends say START and END - so after cutting, "
+        "every row states where it ends and which edge joins which. The line "
+        "sits in guaranteed white and a correct cut removes it. Turned off "
+        "only by the Plain style."
+    ),
     # -- 9. media and printer ---------------------------------------------
     "media.method": (
         "How the image is put onto the material.\n\n"

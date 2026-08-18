@@ -232,6 +232,54 @@ def test_single_row_pages_after_the_first_keep_their_ruler_on_the_page():
             assert max(item.x1, item.x2) <= lists.content.width_mm + 1.0, item
 
 
+def test_every_joint_prints_matching_splice_labels_on_both_mates():
+    """The physical assembly aid: each inter-row joint carries the same
+    SPLICE number on both edges that mate, the outer ends say START and END,
+    so every cut-out row has an explicit labelled boundary at both ends and
+    the installer knows which edge tapes to which."""
+    cfg = dense()
+    d, matrices = derived_and_matrices(cfg)
+    fp = config_fingerprint(cfg)
+
+    rows_per_sheet = 3
+    groups = [d.pages[i:i + rows_per_sheet]
+              for i in range(0, len(d.pages), rows_per_sheet)]
+    labels: list[str] = []
+    for n, group in enumerate(groups, start=1):
+        lists = compose_multirow_sheet(tuple(group), n, len(groups), cfg, d, matrices, fp)
+        labels += [t for t in texts(lists.content.items)
+                   if t.startswith(("SPLICE", "START", "END"))]
+
+    assert labels.count("START") == 1
+    assert labels.count("END") == 1
+    for joint in range(1, len(d.pages)):
+        assert labels.count(f"SPLICE {joint}") == 2, joint
+
+
+def test_the_classic_single_row_layout_carries_the_same_splice_labels():
+    """The joints exist whenever the strip spans sheets, stacked or not."""
+    from aops.core.layout.strip import compose_strip_page
+
+    cfg = dense()
+    d, matrices = derived_and_matrices(cfg)
+    lists = compose_strip_page(d.pages[1], cfg, d, matrices, config_fingerprint(cfg))
+    labels = [t for t in texts(lists.content.items)
+              if t.startswith(("SPLICE", "START", "END"))]
+    assert labels == ["SPLICE 1", "SPLICE 2"]
+
+
+def test_the_splice_switch_silences_the_boundaries():
+    """Plain-style output stays symbols-only; the switch is the gate."""
+    cfg = dense()
+    cfg = dc.replace(cfg, printing=dc.replace(cfg.printing, splice_labels=False))
+    d, matrices = derived_and_matrices(cfg)
+    lists = compose_multirow_sheet(
+        tuple(d.pages[:3]), 1, 2, cfg, d, matrices, config_fingerprint(cfg)
+    )
+    assert not [t for t in texts(lists.content.items)
+                if t.startswith(("SPLICE", "START", "END"))]
+
+
 # -- the export -------------------------------------------------------------
 
 

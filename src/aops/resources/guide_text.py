@@ -48,13 +48,19 @@ def mounting_steps(cfg: AopsConfig, derived: DerivedGeometry) -> tuple[str, ...]
     return (
         "Clean the mounting surface with isopropyl alcohol and let it dry fully.",
         "Establish the machine datum (position 0.000 mm) and mark it clearly on the rail.",
+        "Cut each row out along its printed SPLICE lines - the vertical dashed "
+        "boundaries at both ends. The same SPLICE number appears on the two edges "
+        "that mate; START and END mark the strip's outer ends.",
         "ALIGN EACH TILE TO ITS PRINTED ABSOLUTE POSITION WITH A STEEL TAPE. "
         "Do NOT butt tiles against each other.",
-        f"Butt-splicing would accumulate up to {acc.cumulative_error_mm:.1f} mm over "
-        f"{acc.strip_length_mm / 1000:.3f} m; datum alignment bounds the error at "
+        f"Butt-splicing at the lines is acceptable on a short strip, but its error is "
+        f"your cutting accuracy and it accumulates: up to {acc.cumulative_error_mm:.1f} mm "
+        f"over {acc.strip_length_mm / 1000:.3f} m. Datum alignment bounds the error at "
         f"{acc.bounded_error_mm:.2f} mm per tile.",
         "Each sheet footer prints the absolute X range of that tile - use the leading "
         "edge value as the alignment target.",
+        f"After every splice, measure the two codes flanking the joint: their centres "
+        f"must sit exactly one spacing ({derived.cell.pitch_mm:.1f} mm) apart.",
         "Apply from one end, squeegeeing forward, so no air is trapped and the strip "
         "is not stretched lengthwise.",
         "Keep the strip straight and parallel to the axis of travel within the "

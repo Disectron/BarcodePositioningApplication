@@ -385,6 +385,9 @@ class DesignPanel(ConfigPanel):
                      section="printing")
         self.add_row("cut_marks", "", make_check("Cut marks and strip outline",
                                                  cfg.printing.cut_marks), section="printing")
+        self.add_row("splice_labels", "", make_check("Splice boundary labels",
+                                                     cfg.printing.splice_labels),
+                     section="printing")
         self.add_row("alignment_arrows", "", make_check("Alignment arrows",
                                                         cfg.printing.alignment_arrows),
                      section="printing")

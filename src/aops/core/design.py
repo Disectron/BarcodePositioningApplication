@@ -32,6 +32,7 @@ STYLE_FLAGS: dict[PrintStyle, dict[str, dict[str, bool]]] = {
             "registration_marks": False,
             "cut_marks": False,
             "alignment_arrows": False,
+            "splice_labels": False,
         },
     },
     PrintStyle.LABELLED: {
@@ -46,6 +47,7 @@ STYLE_FLAGS: dict[PrintStyle, dict[str, dict[str, bool]]] = {
             "registration_marks": False,
             "cut_marks": False,
             "alignment_arrows": False,
+            "splice_labels": True,
         },
     },
     PrintStyle.ENGINEERING: {
@@ -60,6 +62,7 @@ STYLE_FLAGS: dict[PrintStyle, dict[str, dict[str, bool]]] = {
             "registration_marks": True,
             "cut_marks": True,
             "alignment_arrows": True,
+            "splice_labels": True,
         },
     },
 }

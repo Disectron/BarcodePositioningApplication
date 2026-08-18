@@ -31,6 +31,7 @@ from aops.core.layout.elements import (
     page_footer_text,
     registration_marks,
     ruler_elements,
+    splice_joints,
     strip_cells,
 )
 from aops.core.matrix import ModuleMatrix
@@ -120,6 +121,11 @@ def compose_strip_page(
     # Cut marks at the page's own boundaries - both fall in white by construction.
     for x in (0.0, um_to_mm(page.content_length_um)):
         items += cut_marks(x, bands.strip_top_mm, bands.strip_bottom_mm, cfg.printing)
+
+    items += splice_joints(
+        page, total_pages, bands.strip_top_mm, bands.strip_bottom_mm, cfg.printing,
+        measurer=measurer,
+    )
 
     items += alignment_arrows(
         0.0, um_to_mm(page.content_length_um), bands.strip_top_mm - 2.0, cfg.printing
@@ -219,6 +225,10 @@ def compose_multirow_sheet(
 
         for x in (0.0, length_mm):
             items += cut_marks(x, strip_top, strip_bottom, cfg.printing)
+
+        items += splice_joints(
+            page, total_rows, strip_top, strip_bottom, cfg.printing, measurer=measurer,
+        )
 
         items += alignment_arrows(0.0, length_mm, strip_top - 2.0, cfg.printing)
 
