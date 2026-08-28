@@ -752,6 +752,12 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        self.open_project(path)
+
+    def open_project(self, path: str) -> None:
+        """Load a project file into the session - the dialog-free core of
+        File > Open, also used for a path handed to the app at launch (the
+        installer associates .aops files with the executable)."""
         try:
             loaded = load_project(Path(path).read_text(encoding="utf-8"))
         except (AopsError, OSError) as exc:

@@ -802,6 +802,24 @@ def test_multirow_that_stacks_exports_without_asking(window, monkeypatch):
     launch.assert_called_once()
 
 
+def test_open_project_by_path_needs_no_dialog(window, tmp_path):
+    """The dialog-free core of File > Open: what the installer's .aops file
+    association and a command-line path both call."""
+    from aops import __version__
+    from aops.core.project_io import dump_project
+
+    cfg = window._store.config
+    import dataclasses as dc_
+
+    saved = dc_.replace(cfg, position=dc_.replace(cfg.position, end_index=7))
+    path = tmp_path / "job.aops"
+    path.write_text(dump_project(saved, app_version=__version__), encoding="utf-8")
+
+    window.open_project(str(path))
+    assert window._store.config.position.end_index == 7
+    assert window._store.path == str(path)
+
+
 def test_the_test_page_action_gates_with_the_other_exports(window):
     window._store.update_section("payload", digits=2)  # blocking
     window._controller.recompute()
