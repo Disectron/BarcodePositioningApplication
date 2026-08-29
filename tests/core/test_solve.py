@@ -304,6 +304,52 @@ def test_a_qr_job_is_sized_for_qr_not_for_data_matrix():
     assert dims.quiet_zone_mm >= 4 * module - 1e-9
 
 
+# -- die-cut stock drives the size ------------------------------------------
+
+
+def test_die_cut_stock_gets_two_to_three_big_codes_per_sticker():
+    """The operator's requirement: on 4x6 in stickers, 2-3 codes each with
+    the code grown to match - size over quantity. 152.4/3 rounded down to
+    the clean step gives a 50 mm pitch, and the cell cap (not the 1 mm
+    generous-module cap) lets the code fill it."""
+    cfg = dc.replace(job(dpi=203),
+                     printer=dc.replace(job(dpi=203).printer,
+                                        label_length_mm=152.4))
+    solution = solve(cfg, travel_mm=1000.0)
+    dims = solution.config.dimensions
+    assert dims.pitch_mm == pytest.approx(50.0)
+    assert dims.symbol_size_mm > 35.0  # a genuinely big code
+    assert dims.symbol_size_mm + max(2 * dims.quiet_zone_mm, 3.0) <= 50.0 + 1e-9
+    reason = next(d for d in solution.decisions
+                  if d.field == "dimensions.pitch_mm").reason
+    assert "sticker" in reason
+
+    report = run_rules(ALL_RULES, solution.config, derive(solution.config))
+    assert not report.blocks_export, [f.message for f in report.blocking]
+
+
+def test_constraints_stronger_than_the_sticker_still_win():
+    """A 4 m/s axis needs 2 mm modules and a pitch the sticker slot cannot
+    shrink - the sticker floor is a floor, never a ceiling."""
+    with_sticker = dc.replace(
+        job(dpi=600, speed=4000.0, distance=200.0),
+        printer=dc.replace(job(dpi=600).printer, dpi=600,
+                           label_length_mm=152.4),
+    )
+    plain = solve(job(dpi=600, speed=4000.0, distance=200.0), travel_mm=2000.0)
+    stickered = solve(with_sticker, travel_mm=2000.0)
+    assert stickered.config.dimensions.pitch_mm >= plain.config.dimensions.pitch_mm
+
+
+def test_continuous_media_is_untouched_by_the_sticker_logic():
+    """label_length_mm = 0 must leave every existing design unchanged."""
+    assert solve(job(dpi=600), travel_mm=1000.0).config.dimensions == \
+        solve(dc.replace(job(dpi=600),
+                         printer=dc.replace(job(dpi=600).printer,
+                                            label_length_mm=0.0)),
+              travel_mm=1000.0).config.dimensions
+
+
 # -- honest infeasibility ---------------------------------------------------
 
 

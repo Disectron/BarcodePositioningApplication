@@ -98,6 +98,14 @@ CUT_TOLERANCE_MM: float = 3.0
 #: comment; "codes every 13.7 mm" is not.
 PITCH_STEP_MM: float = 5.0
 
+#: Codes per sticker the solver designs for on die-cut label stock. The
+#: operator's requirement, verbatim: "always have the barcode size such that
+#: it fits 2-3 barcodes. Prioritise barcode size over quantity." Three is the
+#: target because it sits at the top of that range while already producing
+#: codes larger than any constraint asks for; the first sticker carries one
+#: fewer (the lead-in takes a slot), which is what lands the run at 2-3.
+STICKER_TARGET_CODES: int = 3
+
 #: Vertical clearance added above and below the symbol band for the printed
 #: index text and general margin, before rounding the strip height up.
 HEIGHT_ALLOWANCE_MM: float = 8.0
@@ -252,15 +260,34 @@ def solve(
     pitch_floor = symbol_mm + max(2.0 * quiet_mm, CUT_TOLERANCE_MM)
     pitch_mm = _round_up_mm(pitch_floor, PITCH_STEP_MM)
 
+    # -- die-cut stock drives the pitch up: size over quantity -------------
+    # On sticker rolls the operator's requirement is explicit: a sticker
+    # carries STICKER_TARGET_CODES codes at most, with the code grown to
+    # match, "prioritise barcode size over quantity". The sticker length
+    # divided by the target, rounded DOWN to a clean step so the codes still
+    # fit, becomes a pitch floor; the growth pass below then fills the huge
+    # cell. The first sticker naturally carries one code fewer (the lead-in
+    # takes a slot), landing the run at 2-3 codes per sticker.
+    label_mm = base.printer.label_length_mm
+    sticker_pitch = 0.0
+    if label_mm > 0:
+        sticker_pitch = floor(label_mm / STICKER_TARGET_CODES / PITCH_STEP_MM) * PITCH_STEP_MM
+        if sticker_pitch > pitch_mm:
+            pitch_mm = sticker_pitch
+
     # -- grow the code into the spacing's slack ----------------------------
     # Rounding the pitch up left white inside every cell that nothing claims.
     # A module at its floor spends that slack on nothing; a module grown to
     # fill it prints more cleanly and reads from farther away, at the same
     # strip density. Growth stops where the cell, the reader's window, or a
-    # generous 1 mm module says stop.
+    # generous 1 mm module says stop - except on die-cut stock, where the
+    # cell exists precisely so the code can be big: there the cell itself is
+    # the only cap.
     grown = dots
     if dpi > 0:
         cap_mm = max(module_mm, GENEROUS_MODULE_UM / 1000.0)
+        if sticker_pitch > 0.0 and sticker_pitch == pitch_mm:
+            cap_mm = pitch_mm
         while True:
             sym, q, mod = _snap(grown + 1)
             if mod > cap_mm + 1e-9:
@@ -293,13 +320,21 @@ def solve(
         f"mandates {quiet_modules} module(s) of clear border.",
     ))
 
-    decisions.append(Decision(
-        "dimensions.pitch_mm", round(pitch_mm, 3),
-        f"Code spacing {pitch_mm:.0f} mm: the code plus a {CUT_TOLERANCE_MM:.0f} mm "
-        f"white gap for quiet zones and cutting needs {pitch_floor:.1f} mm, "
-        f"rounded up to a clean multiple of {PITCH_STEP_MM:.0f} so the position "
-        f"formula stays a number to carry in your head.",
-    ))
+    if sticker_pitch > 0.0 and pitch_mm == sticker_pitch:
+        pitch_reason = (
+            f"Code spacing {pitch_mm:.0f} mm: sized to the {label_mm:.0f} mm "
+            f"die-cut sticker so {STICKER_TARGET_CODES} codes fill it, with the "
+            f"code grown to match - size over quantity, as specified. The "
+            f"constraints alone would have allowed {pitch_floor:.1f} mm."
+        )
+    else:
+        pitch_reason = (
+            f"Code spacing {pitch_mm:.0f} mm: the code plus a {CUT_TOLERANCE_MM:.0f} mm "
+            f"white gap for quiet zones and cutting needs {pitch_floor:.1f} mm, "
+            f"rounded up to a clean multiple of {PITCH_STEP_MM:.0f} so the position "
+            f"formula stays a number to carry in your head."
+        )
+    decisions.append(Decision("dimensions.pitch_mm", round(pitch_mm, 3), pitch_reason))
 
     # -- does the redundancy asked for fit the window? ---------------------
     if fov_h > 0.0:
