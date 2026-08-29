@@ -188,11 +188,47 @@ def test_a_short_strip_is_one_label(tmp_path):
     text = result.paths[0].read_text(encoding="ascii")
     assert text.startswith("^XA")
     label = result.labels[0]
-    # The strip runs down the feed; the band stack (strip plus its furniture
-    # bands) runs across the head and must fit a 4-inch printer's 104 mm.
+    # The strip runs down the feed; with the furniture stripped, the label's
+    # width across the head is the bare band - narrow media, not a 4-inch
+    # sheet of decoration.
     assert label.length_dots > label.width_dots
-    assert label.width_dots >= round(20.0 / 25.4 * 203)  # at least the band
-    assert label.width_dots <= round(104.0 / 25.4 * 203)
+    band_dots = round(20.0 / 25.4 * 203)
+    assert band_dots <= label.width_dots <= band_dots + round(6.0 / 25.4 * 203)
+
+
+def test_a_label_is_codes_and_values_and_nothing_else():
+    """The operator's requirement, verbatim: 'if it is a ZPL export, I just
+    want the barcodes printed along with the value below'. No header, no
+    ruler, no calibration bar, no outlines, no splice labels - every text on
+    a piece is a code's own value, and the only geometry is the symbols."""
+    from aops.core.drawlist import Line, Rect, SymbolPrim, Text
+    from aops.core.layout.strip import compose_strip_page
+    from aops.core.project_io import config_fingerprint
+    from aops.render.zpl.export import _piece_config
+
+    # Even a config with every furniture switch ON, and values OFF:
+    cfg = job()
+    cfg = dc.replace(
+        cfg,
+        printer=dc.replace(cfg.printer, max_label_length_mm=400.0),
+        output=dc.replace(cfg.output, human_readable=False),
+    )
+    piece_cfg = _piece_config(cfg)
+    pieces = derive(piece_cfg, matrix_cols=10)
+    cache = SymbolCache(build_registry(cfg.symbol))
+    matrices = {p: cache.get(cfg.symbol.symbology, p) for p in dict.fromkeys(pieces.payloads)}
+
+    for page in pieces.pages:
+        if page.cell_count == 0:
+            continue
+        lists = compose_strip_page(page, piece_cfg, pieces, matrices,
+                                   config_fingerprint(cfg))
+        texts = [i for i in lists.content.items if isinstance(i, Text)]
+        symbols = [i for i in lists.content.items if isinstance(i, SymbolPrim)]
+        assert symbols, "a piece must carry its codes"
+        assert len(texts) == len(symbols)  # one value under every code
+        assert all(t.text.isdigit() for t in texts), [t.text for t in texts]
+        assert not [i for i in lists.content.items if isinstance(i, Line | Rect)]
 
 
 def test_the_wire_carries_exactly_the_file(tmp_path):

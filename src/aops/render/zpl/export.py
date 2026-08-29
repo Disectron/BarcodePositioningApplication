@@ -12,8 +12,8 @@ to prevent, hidden until a label tore through a symbol.
 
 Each piece is rasterized at the printer's native dpi (no driver, viewer or
 scaling setting between AOPS and the platen) and written as one `.zpl` file.
-Pieces carry the same captions and numbered SPLICE boundaries as tiled
-sheets, so joining them follows the printed instructions.
+A label carries the codes and the value under each one and nothing else -
+see `_piece_config` for the reasoning.
 
 The guide page is deliberately absent: it is an A4 document for humans, not
 a label. Print it from the PDF export.
@@ -38,7 +38,6 @@ from aops.core.layout.strip import compose_strip_page
 from aops.core.matrix import ModuleMatrix
 from aops.core.project_io import config_fingerprint
 from aops.core.stats import DerivedGeometry, derive
-from aops.core.units import um_to_mm
 from aops.render.zpl.backend import ZEBRA_RAW_PORT, ZplLabel, encode_label, rasterize
 from aops.symbols.cache import SymbolCache
 
@@ -55,7 +54,19 @@ class ZplExportResult:
 
 
 def _piece_config(cfg: AopsConfig) -> AopsConfig:
-    """The job repaginated onto printer-length virtual paper, one row a piece."""
+    """The job repaginated onto printer-length virtual paper, one row a piece.
+
+    A label carries the codes and the value under each one - NOTHING else,
+    per the operator's explicit requirement. Headers, footers, rulers, the
+    calibration bar, outlines, arrows and splice labels are page furniture
+    for office sheets; on label media they only widen the label. What
+    survives is what the machine and the installer actually need: symbols,
+    values (forced on - a strip of anonymous squares cannot be assembled or
+    verified), and the leading white that positions code zero. Piece order
+    is unambiguous from the values themselves, and the codes are their own
+    ruler: any two values state their exact nominal distance, which is how a
+    ZPL print is scale-checked.
+    """
     limit = cfg.output.continuous_max_length_mm
     if cfg.printer.max_label_length_mm > 0:
         limit = min(limit, cfg.printer.max_label_length_mm)
@@ -71,8 +82,23 @@ def _piece_config(cfg: AopsConfig) -> AopsConfig:
             custom_width_mm=limit + paper.margin_left_mm + paper.margin_right_mm,
             custom_height_mm=50.0,
         ),
-        output=dc.replace(cfg.output, tiled_pages=True, continuous=False,
-                          rows_per_sheet=1),
+        output=dc.replace(
+            cfg.output,
+            tiled_pages=True,
+            continuous=False,
+            rows_per_sheet=1,
+            human_readable=True,
+            page_header_footer=False,
+            engineering_ruler=False,
+            calibration_bar=False,
+        ),
+        printing=dc.replace(
+            cfg.printing,
+            cut_marks=False,
+            alignment_arrows=False,
+            registration_marks=False,
+            splice_labels=False,
+        ),
     )
 
 
@@ -135,26 +161,10 @@ def export_zpl(
     coded = [page for page in pieces.pages if page.cell_count > 0]
     total = len(coded)
     for page in coded:
-        # Compose against paper exactly as long as this piece, so a short
-        # last piece gets short furniture - header and footer rules span the
-        # content width, and a 70 mm tail must not drag 990 mm of them.
-        length_mm = um_to_mm(page.content_length_um)
-        page_cfg = dc.replace(
-            piece_cfg,
-            paper=dc.replace(
-                piece_cfg.paper,
-                custom_width_mm=length_mm + piece_cfg.paper.margin_left_mm
-                + piece_cfg.paper.margin_right_mm,
-            ),
-            # A short tail cannot hold the calibration bar; a clipped bar is
-            # worse than none (it invites measuring a truncated length).
-            output=dc.replace(
-                piece_cfg.output,
-                calibration_bar=piece_cfg.output.calibration_bar
-                and length_mm >= cfg.printing.calibration_length_mm + 5.0,
-            ),
-        )
-        lists = compose_strip_page(page, page_cfg, pieces, matrices, fingerprint)
+        # With every full-width furniture band stripped, nothing on the page
+        # extends past the last code - the trailing trim below sizes a short
+        # last piece by itself.
+        lists = compose_strip_page(page, piece_cfg, pieces, matrices, fingerprint)
         image = rasterize(lists.content, cfg.printer.dpi, cfg.printing.scale_factor)
         image = _trim_trailing_white(image, cfg.printer.dpi)
         label = encode_label(image)

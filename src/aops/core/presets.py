@@ -448,7 +448,7 @@ PRINTER_PRESETS: Final[tuple[Preset, ...]] = (
         "0.125 mm), 104 mm print width, media 25.4-112 mm wide, and a firmware "
         "maximum of 990 mm per printed piece - this preset caps the continuous "
         "piece length to match, so a long strip splits into printable rolls "
-        "with splice boundaries at the joints.\n\n"
+        "at code boundaries.\n\n"
         "Use the thermal-transfer 't' variant with resin ribbon on polyester "
         "for a durable strip; the direct-thermal 'd' variant fades. Print via "
         "the ZDesigner driver at exactly 100 %, or use Export ZPL to bypass "
