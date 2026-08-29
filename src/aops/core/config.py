@@ -242,6 +242,12 @@ class MediaConfig:
         return self.effective_cte_ppm_per_c - self.frame_material.cte_ppm_per_c
 
 
+#: The de facto industry norm for the liner gap on die-cut label stock:
+#: 3 mm (1/8 in). Not a standard - converters run roughly 2 to 5 mm - which
+#: is why ``label_gap_mm`` distinguishes "assumed" (0) from "measured".
+DEFAULT_LABEL_GAP_MM: float = 3.0
+
+
 @dataclass(frozen=True, slots=True)
 class PrinterConfig:
     """Output device characteristics.
@@ -265,18 +271,25 @@ class PrinterConfig:
     #: strip one sticker at a time and asks the printer to register each
     #: label by its gap sensor.
     label_length_mm: float = 0.0
-    #: The liner gap between stickers on die-cut stock. About 3 mm (1/8 in)
-    #: is the industry's de facto norm, but it is NOT a standard - converters
-    #: run anything from ~2 to 5 mm, which is why printers calibrate per
-    #: roll. AOPS records it for media accounting; the printer's own
-    #: calibration measures the real value and does the registering.
-    label_gap_mm: float = 3.0
+    #: The liner gap between stickers on die-cut stock. 0 means "not
+    #: measured - assume the industry norm" (about 3 mm / 1/8 in, the de
+    #: facto convention; converters run anything from ~2 to 5 mm, which is
+    #: exactly why printers calibrate per roll). Enter the measured value
+    #: once the roll is in hand. AOPS records it for media accounting; the
+    #: printer's own calibration measures the real gap and does the
+    #: registering either way.
+    label_gap_mm: float = 0.0
 
     def derived_scale_percent(self, nominal_mm: float) -> float:
         """Scale percentage that would make a bar measuring `measured` come out at `nominal`."""
         if self.measured_calibration_mm <= 0.0:
             return 100.0
         return nominal_mm / self.measured_calibration_mm * 100.0
+
+    @property
+    def effective_label_gap_mm(self) -> float:
+        """The gap to reason with: the measured value, or the industry norm."""
+        return self.label_gap_mm if self.label_gap_mm > 0.0 else DEFAULT_LABEL_GAP_MM
 
 
 @dataclass(frozen=True, slots=True)

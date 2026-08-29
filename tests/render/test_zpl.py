@@ -363,3 +363,16 @@ def test_sticker_length_with_dead_tail_gets_the_hint():
     finding = next(f for f in report.findings if f.rule_id == "PRN-013")
     assert "10.0 mm" in finding.message
     assert "90" in finding.hint and "105" in finding.hint
+
+
+def test_the_gap_is_default_until_measured():
+    """0 means 'assume the 3 mm industry norm'; a typed value is the
+    measurement. The effective property is what any consumer reasons with."""
+    from aops.core.config import DEFAULT_LABEL_GAP_MM
+
+    base = AopsConfig().printer
+    assert base.label_gap_mm == 0.0
+    assert base.effective_label_gap_mm == DEFAULT_LABEL_GAP_MM
+
+    measured = dc.replace(base, label_gap_mm=4.2)
+    assert measured.effective_label_gap_mm == 4.2

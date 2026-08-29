@@ -512,11 +512,12 @@ FIELD_HINTS: dict[str, str] = {
         "error at the joints."
     ),
     "printer.label_gap_mm": (
-        "The liner gap between die-cut stickers.\n\n"
-        "About 3 mm (1/8 in) is the de facto industry norm, but it is not a "
-        "standard - converters run roughly 2 to 5 mm, which is exactly why "
-        "printers calibrate per roll. The gap is the printer's registration "
-        "mark; it never becomes part of the strip's geometry."
+        "The liner gap between die-cut stickers: default or measured.\n\n"
+        "'Default' (the 0 position) assumes the 3 mm (1/8 in) de facto "
+        "industry norm. It is not a standard - converters run roughly 2 to "
+        "5 mm - so once the roll is in hand, measure the gap and enter the "
+        "value. Either way the printer calibrates per roll: the gap is its "
+        "registration mark and never becomes part of the strip's geometry."
     ),
     "printing.splice_labels": (
         "Labelled trim boundaries at every row joint.\n\n"

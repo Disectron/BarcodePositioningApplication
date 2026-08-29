@@ -721,16 +721,19 @@ class MediaPanel(ConfigPanel):
                 "cleanly. 0 = continuous media."
             ),
         )
+        gap = make_double(cfg.printer.label_gap_mm, minimum=0.0, maximum=20.0,
+                          step=0.5, decimals=1)
+        gap.setSpecialValueText("Default (3 mm norm)")
         self.add_row(
-            "label_gap_mm", "Label gap",
-            make_double(cfg.printer.label_gap_mm, minimum=0.0, maximum=20.0,
-                        step=0.5, decimals=1),
+            "label_gap_mm", "Label gap", gap,
             suffix="mm", section="printer",
             tooltip=(
-                "The liner gap between die-cut stickers. About 3 mm is the "
-                "industry norm but it varies by converter (2-5 mm) - run the "
-                "printer's media calibration per roll; the sensor measures "
-                "the real value."
+                "The liner gap between die-cut stickers - your choice of "
+                "default or measured. Leave at 'Default' to assume the 3 mm "
+                "industry norm; once the roll is in hand, measure the gap "
+                "and enter the value (converters vary, roughly 2-5 mm). "
+                "Either way, run the printer's media calibration per roll - "
+                "its sensor measures the real gap and registers each sticker."
             ),
         )
         self.measured = make_double(
