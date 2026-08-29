@@ -191,13 +191,19 @@ def rasterize(lists: DrawList, dpi: int, scale: float = 1.0) -> Image.Image:
     return painter.image
 
 
-def encode_label(strip_image: Image.Image) -> ZplLabel:
+def encode_label(strip_image: Image.Image, *, gap_sensing: bool = False) -> ZplLabel:
     """Wrap a natural-orientation strip image (x = strip axis) in ZPL.
 
     ZPL's x runs across the print head and y along the media feed, and the
     strip prints lengthwise down the feed - so the image is rotated a quarter
     turn (a rotation, never a mirror: matrix symbols are chirality-sensitive).
     After ROTATE_270 the strip's start is the first thing off the printer.
+
+    `gap_sensing` selects the media tracking mode: continuous media (^MNN,
+    the default) is positioned by feed alone; die-cut stickers (^MNY) are
+    registered by the printer's gap sensor, which finds each label's leading
+    edge through the liner gap - so every sticker starts at a die-cut edge
+    regardless of how far the previous one fed.
 
     The graphic field is plain uppercase hex: bigger than Zebra's compressed
     forms but deterministic, diffable and accepted by every firmware.
@@ -219,7 +225,7 @@ def encode_label(strip_image: Image.Image) -> ZplLabel:
         f"^PW{width_dots}\n"
         f"^LL{length_dots}\n"
         "^LH0,0\n"
-        "^MNN\n"
+        f"{'^MNY' if gap_sensing else '^MNN'}\n"
         f"^FO0,0^GFA,{total},{total},{per_row},\n{hex_rows}\n^FS\n"
         "^XZ\n"
     )

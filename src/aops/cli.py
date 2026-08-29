@@ -123,9 +123,13 @@ def cmd_zpl(args: argparse.Namespace) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     result = export_zpl(cfg, derived, cache, out / f"{args.basename}.zpl")
-    for path, label in zip(result.paths, result.labels, strict=True):
-        print(f"wrote {path}  ({path.stat().st_size / 1024:.0f} KB, "
-              f"{label.width_dots} x {label.length_dots} dots)")
+    for path in result.paths:
+        print(f"wrote {path}  ({path.stat().st_size / 1024:.0f} KB)")
+    for n, label in enumerate(result.labels, start=1):
+        print(f"  label {n}/{len(result.labels)}: {label.width_dots} x "
+              f"{label.length_dots} dots "
+              f"({label.width_dots / cfg.printer.dpi * 25.4:.1f} x "
+              f"{label.length_dots / cfg.printer.dpi * 25.4:.0f} mm)")
 
     if args.send:
         host, _, port = args.send.partition(":")

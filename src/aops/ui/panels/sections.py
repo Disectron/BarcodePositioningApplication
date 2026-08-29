@@ -707,6 +707,32 @@ class MediaPanel(ConfigPanel):
                 "it in. 0 = not stated."
             ),
         )
+        sticker = make_double(cfg.printer.label_length_mm, minimum=0.0,
+                              maximum=2000.0, step=5.0, decimals=0)
+        sticker.setSpecialValueText("Continuous media")
+        self.add_row(
+            "label_length_mm", "Die-cut label length", sticker, suffix="mm",
+            section="printer",
+            tooltip=(
+                "For die-cut sticker rolls: the length of one sticker along "
+                "the feed. The ZPL export then packs one sticker per label "
+                "and the printer's gap sensor registers each one. A length "
+                "that is a whole number of code spacings butt-splices "
+                "cleanly. 0 = continuous media."
+            ),
+        )
+        self.add_row(
+            "label_gap_mm", "Label gap",
+            make_double(cfg.printer.label_gap_mm, minimum=0.0, maximum=20.0,
+                        step=0.5, decimals=1),
+            suffix="mm", section="printer",
+            tooltip=(
+                "The liner gap between die-cut stickers. About 3 mm is the "
+                "industry norm but it varies by converter (2-5 mm) - run the "
+                "printer's media calibration per roll; the sensor measures "
+                "the real value."
+            ),
+        )
         self.measured = make_double(
             cfg.printer.measured_calibration_mm, minimum=1.0, maximum=1000.0, step=0.1
         )

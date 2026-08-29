@@ -23,6 +23,9 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "are generated at the printer's own resolution and no driver or viewer "
     "setting can rescale them. Send the .zpl files to the printer's raw port "
     "(9100), e.g. 'aops-cli zpl --send <printer-ip>'.",
+    "Die-cut label rolls: run the printer's media calibration for every new "
+    "roll - gap length and liner opacity vary by manufacturer, and the gap "
+    "sensor is what registers each sticker.",
 )
 
 CALIBRATION_STEPS: tuple[str, ...] = (

@@ -502,6 +502,22 @@ FIELD_HINTS: dict[str, str] = {
         "at it rather than letting the printer truncate a piece mid-code. "
         "Device presets fill it in."
     ),
+    "printer.label_length_mm": (
+        "For die-cut sticker rolls: the length of one sticker along the "
+        "feed.\n\n"
+        "Zero means continuous media. When set, the ZPL export packs the "
+        "strip one sticker at a time and the printer's gap sensor registers "
+        "each label at its die-cut edge. A length that is a whole multiple "
+        "of the code spacing lets stickers butt-splice with no spacing "
+        "error at the joints."
+    ),
+    "printer.label_gap_mm": (
+        "The liner gap between die-cut stickers.\n\n"
+        "About 3 mm (1/8 in) is the de facto industry norm, but it is not a "
+        "standard - converters run roughly 2 to 5 mm, which is exactly why "
+        "printers calibrate per roll. The gap is the printer's registration "
+        "mark; it never becomes part of the strip's geometry."
+    ),
     "printing.splice_labels": (
         "Labelled trim boundaries at every row joint.\n\n"
         "Each joint prints the same SPLICE number on the two edges that mate, "

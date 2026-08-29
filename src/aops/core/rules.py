@@ -767,6 +767,36 @@ def prn_piece_exceeds_printer(cfg: AopsConfig, derived: DerivedGeometry | None) 
              _mm_fix("output.continuous_max_length_mm", max_mm, "piece length"))
 
 
+def prn_sticker_holds_whole_cells(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """Die-cut stickers butt-splice cleanly only when the label length is a
+    whole number of code spacings.
+
+    Every sticker ends on a cell boundary by pagination; whether that
+    boundary reaches the sticker's die-cut edge depends on the stock. A
+    100 mm sticker at 25 mm pitch ends flush - peel, butt, and the spacing
+    carries straight across the joint. At 15 mm pitch each sticker ends with
+    10 mm of dead label, and butting stickers would stretch every joint by
+    that much - the stickers must then be placed by measurement instead.
+    Information, not a warning: the stock may already be bought.
+    """
+    length = cfg.printer.label_length_mm
+    pitch = cfg.dimensions.pitch_mm
+    if length <= 0 or pitch <= 0:
+        return
+    remainder = length % pitch
+    if remainder < 1e-6 or pitch - remainder < 1e-6:
+        return
+    below = int(length // pitch) * pitch
+    yield _f("PRN-013", Severity.INFO,
+             f"A {length:.0f} mm sticker holds {below / pitch:.0f} codes at "
+             f"{pitch:.0f} mm and ends with {remainder:.1f} mm of dead label. "
+             f"Butted stickers would stretch every joint by that much.",
+             "printer.label_length_mm",
+             f"Stock cut to a multiple of the spacing ({below:.0f} or "
+             f"{below + pitch:.0f} mm) butt-splices cleanly; otherwise place "
+             f"each sticker by measurement.")
+
+
 def prn_module_dots(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     """The print-resolution criterion: a module must span enough printer dots."""
     if derived is None:
@@ -1338,6 +1368,7 @@ ALL_RULES: tuple[Rule, ...] = (
     prn_dot_grid,
     prn_bar_could_span_the_page,
     prn_piece_exceeds_printer,
+    prn_sticker_holds_whole_cells,
     prn_splice_error,
     med_paper,
     med_drift,

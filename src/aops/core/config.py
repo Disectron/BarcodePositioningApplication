@@ -260,6 +260,17 @@ class PrinterConfig:
     #: and the ZPL export refuses pieces beyond it rather than letting the
     #: printer truncate the strip mid-code.
     max_label_length_mm: float = 0.0
+    #: Die-cut label stock: the length of one sticker along the feed. 0 (the
+    #: default) means continuous media. When set, the ZPL export packs the
+    #: strip one sticker at a time and asks the printer to register each
+    #: label by its gap sensor.
+    label_length_mm: float = 0.0
+    #: The liner gap between stickers on die-cut stock. About 3 mm (1/8 in)
+    #: is the industry's de facto norm, but it is NOT a standard - converters
+    #: run anything from ~2 to 5 mm, which is why printers calibrate per
+    #: roll. AOPS records it for media accounting; the printer's own
+    #: calibration measures the real value and does the registering.
+    label_gap_mm: float = 3.0
 
     def derived_scale_percent(self, nominal_mm: float) -> float:
         """Scale percentage that would make a bar measuring `measured` come out at `nominal`."""

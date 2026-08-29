@@ -66,21 +66,37 @@ def _piece_config(cfg: AopsConfig) -> AopsConfig:
     is unambiguous from the values themselves, and the codes are their own
     ruler: any two values state their exact nominal distance, which is how a
     ZPL print is scale-checked.
+
+    On die-cut stock (``printer.label_length_mm`` set) a piece is one
+    sticker: the virtual paper becomes the sticker's printable length with
+    no side margins, so cell boundaries can land exactly on the die-cut
+    edges. The liner gap between stickers never enters the geometry - it is
+    the printer's registration mark, not part of the strip.
     """
-    limit = cfg.output.continuous_max_length_mm
-    if cfg.printer.max_label_length_mm > 0:
-        limit = min(limit, cfg.printer.max_label_length_mm)
+    die_cut = cfg.printer.label_length_mm > 0
+    if die_cut:
+        limit = cfg.printer.label_length_mm
+        if cfg.printer.max_label_length_mm > 0:
+            limit = min(limit, cfg.printer.max_label_length_mm)
+    else:
+        limit = cfg.output.continuous_max_length_mm
+        if cfg.printer.max_label_length_mm > 0:
+            limit = min(limit, cfg.printer.max_label_length_mm)
     if limit <= 0:
         raise GeometryError("The piece length limit must be positive.")
     paper = cfg.paper
+    margin_lr = 0.0 if die_cut else paper.margin_left_mm
+    margin_rr = 0.0 if die_cut else paper.margin_right_mm
     return dc.replace(
         cfg,
         paper=dc.replace(
             paper,
             preset=PaperPreset.CUSTOM,
             orientation=Orientation.LANDSCAPE,
-            custom_width_mm=limit + paper.margin_left_mm + paper.margin_right_mm,
-            custom_height_mm=50.0,
+            custom_width_mm=limit + margin_lr + margin_rr,
+            custom_height_mm=min(50.0, limit * 0.5),
+            margin_left_mm=margin_lr,
+            margin_right_mm=margin_rr,
         ),
         output=dc.replace(
             cfg.output,
@@ -126,10 +142,17 @@ def export_zpl(
     *,
     cancel: Event | None = None,
 ) -> ZplExportResult:
-    """Write the strip as one `.zpl` file per printer-sized piece.
+    """Write the strip as native ZPL.
 
-    `out_path` names the first piece; multi-piece jobs get `_rollNN`
-    suffixes exactly like the continuous PDF export.
+    Continuous media: one `.zpl` file per printer-sized piece - `out_path`
+    names the first, multi-piece jobs get `_rollNN` suffixes exactly like
+    the continuous PDF export, because the operator reloads media between
+    pieces.
+
+    Die-cut stock (``printer.label_length_mm`` set): ONE `.zpl` file
+    holding one label format per sticker. The printer prints the whole run
+    in a single job, its gap sensor registering every sticker at its
+    die-cut edge - no reload, no operator action between stickers.
     """
     piece_cfg = _piece_config(cfg)
     pieces = derive(piece_cfg, matrix_cols=derived.matrix_cols)
@@ -153,6 +176,7 @@ def export_zpl(
     if base.suffix.lower() != ".zpl":
         base = base.with_suffix(".zpl")
 
+    die_cut = cfg.printer.label_length_mm > 0
     paths: list[Path] = []
     labels: list[ZplLabel] = []
     # A page holding only leading or trailing white would print a label of
@@ -167,22 +191,31 @@ def export_zpl(
         lists = compose_strip_page(page, piece_cfg, pieces, matrices, fingerprint)
         image = rasterize(lists.content, cfg.printer.dpi, cfg.printing.scale_factor)
         image = _trim_trailing_white(image, cfg.printer.dpi)
-        label = encode_label(image)
+        label = encode_label(image, gap_sensing=die_cut)
 
         if max_mm > 0 and label.length_dots > max_mm / 25.4 * cfg.printer.dpi + 1:
             raise GeometryError(  # pragma: no cover - pagination caps the length
                 f"A piece came out longer than the printer's {max_mm:.0f} mm limit."
             )
-
-        path = (
-            base.with_name(f"{base.stem}_roll{page.strip_page_number:02d}{base.suffix}")
-            if total > 1
-            else base
-        )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(label.data, encoding="ascii")
-        paths.append(path)
         labels.append(label)
+
+        if not die_cut:
+            path = (
+                base.with_name(
+                    f"{base.stem}_roll{page.strip_page_number:02d}{base.suffix}"
+                )
+                if total > 1
+                else base
+            )
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(label.data, encoding="ascii")
+            paths.append(path)
+
+    if die_cut:
+        # One batch job: the printer runs sticker to sticker on its own.
+        base.parent.mkdir(parents=True, exist_ok=True)
+        base.write_text("".join(label.data for label in labels), encoding="ascii")
+        paths.append(base)
 
     return ZplExportResult(
         paths=tuple(paths),

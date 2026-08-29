@@ -313,3 +313,53 @@ def test_the_cli_writes_zpl_end_to_end(tmp_path, capsys):
     assert pieces
     assert pieces[0].read_text(encoding="ascii").startswith("^XA")
     assert "wrote" in capsys.readouterr().out
+
+
+# -- die-cut sticker rolls --------------------------------------------------
+
+
+def test_die_cut_stock_packs_one_sticker_per_label(tmp_path):
+    """100 mm stickers at 25 mm pitch: the first carries the 20 mm leader
+    plus 3 codes, every later one exactly 4 - cell boundaries landing on the
+    die-cut edges, all in ONE batch file with gap sensing on."""
+    cfg = dc.replace(job(), printer=dc.replace(job().printer,
+                                               label_length_mm=100.0))
+    result = export(cfg, tmp_path)
+
+    assert result.piece_count == 1  # one batch file
+    assert result.paths[0].name == "strip.zpl"
+    assert len(result.labels) == 8  # 3 + 4*7 = 31 codes
+    text = result.paths[0].read_text(encoding="ascii")
+    assert text.count("^XA") == 8
+    assert "^MNY" in text and "^MNN" not in text
+
+    sticker_dots = round(100.0 / 25.4 * 203)
+    for label in result.labels:
+        assert label.length_dots <= sticker_dots + 1
+
+
+def test_continuous_media_still_tracks_as_continuous(tmp_path):
+    result = export(job(), tmp_path)
+    text = result.paths[0].read_text(encoding="ascii")
+    assert "^MNN" in text and "^MNY" not in text
+
+
+def test_sticker_length_that_divides_the_pitch_stays_quiet():
+    cfg = dc.replace(job(), printer=dc.replace(job().printer,
+                                               label_length_mm=100.0))
+    ids = {f.rule_id for f in run_rules(ALL_RULES, cfg, derive(cfg)).findings}
+    assert "PRN-013" not in ids
+
+
+def test_sticker_length_with_dead_tail_gets_the_hint():
+    """A 100 mm sticker at 15 mm pitch ends with 10 mm of dead label."""
+    cfg = dc.replace(
+        job(),
+        dimensions=dc.replace(job().dimensions, pitch_mm=15.0,
+                              symbol_size_mm=8.0),
+        printer=dc.replace(job().printer, label_length_mm=100.0),
+    )
+    report = run_rules(ALL_RULES, cfg, derive(cfg))
+    finding = next(f for f in report.findings if f.rule_id == "PRN-013")
+    assert "10.0 mm" in finding.message
+    assert "90" in finding.hint and "105" in finding.hint
