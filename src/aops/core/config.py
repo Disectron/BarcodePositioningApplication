@@ -254,6 +254,12 @@ class PrinterConfig:
     dpi: int = 600
     unprintable_margin_mm: float = 5.0
     measured_calibration_mm: float = 200.0
+    #: Longest single piece the device can print, in millimetres. 0 means
+    #: "not stated" (an office printer's page size already bounds it). Label
+    #: printers have a real firmware limit - a Zebra ZD230 stops at 990 mm -
+    #: and the ZPL export refuses pieces beyond it rather than letting the
+    #: printer truncate the strip mid-code.
+    max_label_length_mm: float = 0.0
 
     def derived_scale_percent(self, nominal_mm: float) -> float:
         """Scale percentage that would make a bar measuring `measured` come out at `nominal`."""

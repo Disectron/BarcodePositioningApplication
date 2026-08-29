@@ -495,6 +495,13 @@ FIELD_HINTS: dict[str, str] = {
         "It must stay within the white space, or the overlap will cover a "
         "code's clear border and stop it reading."
     ),
+    "printer.max_label_length_mm": (
+        "The longest single piece this printer can print, in millimetres.\n\n"
+        "Zero means 'not stated'. Label printers have a real firmware limit - "
+        "a Zebra ZD230 stops at 990 mm - and the ZPL export splits the strip "
+        "at it rather than letting the printer truncate a piece mid-code. "
+        "Device presets fill it in."
+    ),
     "printing.splice_labels": (
         "Labelled trim boundaries at every row joint.\n\n"
         "Each joint prints the same SPLICE number on the two edges that mate, "

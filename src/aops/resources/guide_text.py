@@ -19,6 +19,10 @@ PRINT_CHECKLIST: tuple[str, ...] = (
     "Match the driver resolution to the resolution stated below.",
     "Print one proof sheet and measure the calibration bar before printing the run.",
     "Use the same printer, driver and media for every sheet of the run.",
+    "Zebra/label printers: prefer Export ZPL over printing this PDF - the dots "
+    "are generated at the printer's own resolution and no driver or viewer "
+    "setting can rescale them. Send the .zpl files to the printer's raw port "
+    "(9100), e.g. 'aops-cli zpl --send <printer-ip>'.",
 )
 
 CALIBRATION_STEPS: tuple[str, ...] = (

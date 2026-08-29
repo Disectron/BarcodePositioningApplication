@@ -246,6 +246,12 @@ class MainWindow(QMainWindow):
                                   "Export one bench sheet: the calibration bar plus the "
                                   "first page of real codes. Print and verify this before "
                                   "committing a full roll.")
+        self._act_export_zpl = add(
+            "Export ZPL", self.on_export_zpl, None,
+            "Export native ZPL for Zebra label printers - the strip rasterized "
+            "at the printer's own dpi, one .zpl file per printer-sized piece. "
+            "No driver or viewer scaling can touch the dots; send the files to "
+            "the printer's raw port (9100) or with aops-cli zpl --send.")
         bar.addSeparator()
         self._act_undo = add("Undo", self._store.undo, "Ctrl+Z")
         self._act_redo = add("Redo", self._store.redo, "Ctrl+Y")
@@ -506,6 +512,7 @@ class MainWindow(QMainWindow):
         self._act_export_cont.setEnabled(not blocked)
         self._act_export_rows.setEnabled(not blocked)
         self._act_test_page.setEnabled(not blocked)
+        self._act_export_zpl.setEnabled(not blocked)
 
         if blocked:
             ids = ", ".join(sorted({f.rule_id for f in report.blocking}))
@@ -950,6 +957,41 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Cannot export", str(exc))
             return
         self._launch_export(coupon, derived, "test_page")
+
+    def on_export_zpl(self) -> None:
+        """Write native ZPL, synchronously - rasterizing is a second's work.
+
+        Unlike the PDF exports there is no worker thread or progress dialog:
+        the piece count is small and the encoding fast, and the simple path
+        cannot deadlock with an export already running.
+        """
+        from aops.render.zpl.export import export_zpl
+
+        derived = self._controller.derived
+        if derived is None:
+            QMessageBox.warning(self, "Cannot export", "The geometry could not be resolved.")
+            return
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose output folder", self._settings.last_export_dir()
+        )
+        if not directory:
+            return
+        self._settings.set_last_export_dir(directory)
+        try:
+            result = export_zpl(
+                self._store.config, derived, self._controller.cache,
+                Path(directory) / "barcode_strip.zpl",
+            )
+        except AopsError as exc:
+            QMessageBox.critical(self, "ZPL export failed", str(exc))
+            return
+        names = "\n".join(str(p) for p in result.paths)
+        self._status_detail.setText(f"Exported {result.piece_count} ZPL piece(s)")
+        QMessageBox.information(
+            self, "ZPL export complete",
+            f"Wrote:\n{names}\n\nSend to the printer's raw port (9100) - e.g.\n"
+            f"aops-cli zpl --project <file> --send <printer-ip>",
+        )
 
     def _launch_export(self, cfg: AopsConfig, derived: DerivedGeometry, basename: str) -> None:
         if self._thread is not None:

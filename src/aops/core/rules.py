@@ -742,6 +742,31 @@ def prn_bar_could_span_the_page(cfg: AopsConfig, derived: DerivedGeometry | None
              _mm_fix("printing.calibration_length_mm", best, "calibration length"))
 
 
+def prn_piece_exceeds_printer(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
+    """Continuous pieces must fit the printer's stated maximum label length.
+
+    Only fires when a maximum is stated (a device preset like the Zebra
+    ZD230's 990 mm) and the configured piece cap sits above it while the
+    strip is actually long enough to hit the limit. The ZPL export caps
+    itself either way; this keeps the continuous PDF honest too.
+    """
+    if derived is None:
+        return
+    max_mm = cfg.printer.max_label_length_mm
+    if max_mm <= 0:
+        return
+    cap = cfg.output.continuous_max_length_mm
+    if cap <= max_mm + 1e-6 or derived.total_length_mm <= max_mm + 1e-6:
+        return
+    yield _f("PRN-012", Severity.WARNING,
+             f"Continuous pieces may run to {cap:.0f} mm, but this printer prints "
+             f"at most {max_mm:.0f} mm in one piece - the firmware would truncate "
+             f"the strip mid-run.",
+             "output.continuous_max_length_mm",
+             "Cap the piece length at what the printer can actually print.",
+             _mm_fix("output.continuous_max_length_mm", max_mm, "piece length"))
+
+
 def prn_module_dots(cfg: AopsConfig, derived: DerivedGeometry | None) -> Iterable[Finding]:
     """The print-resolution criterion: a module must span enough printer dots."""
     if derived is None:
@@ -1312,6 +1337,7 @@ ALL_RULES: tuple[Rule, ...] = (
     prn_module_dots,
     prn_dot_grid,
     prn_bar_could_span_the_page,
+    prn_piece_exceeds_printer,
     prn_splice_error,
     med_paper,
     med_drift,

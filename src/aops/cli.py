@@ -108,6 +108,36 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_zpl(args: argparse.Namespace) -> int:
+    """Export native ZPL and, if asked, send it straight to the printer."""
+    from aops.render.zpl.export import export_zpl, send_zpl
+
+    cfg = _load(args.project)
+    derived, cache = _derive(cfg)
+
+    print("validation:")
+    if not _report(cfg, derived, verbose=args.verbose):
+        print("Export blocked by errors above.", file=sys.stderr)
+        return 2
+
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    result = export_zpl(cfg, derived, cache, out / f"{args.basename}.zpl")
+    for path, label in zip(result.paths, result.labels, strict=True):
+        print(f"wrote {path}  ({path.stat().st_size / 1024:.0f} KB, "
+              f"{label.width_dots} x {label.length_dots} dots)")
+
+    if args.send:
+        host, _, port = args.send.partition(":")
+        port_num = int(port) if port else 9100
+        for path in result.paths:
+            sent = send_zpl(path.read_text(encoding="ascii"), host, port_num)
+            print(f"sent {path.name} to {host}:{port_num}  ({sent / 1024:.0f} KB)")
+            if len(result.paths) > 1 and path is not result.paths[-1]:
+                input("  load the next piece of media and press Enter...")
+    return 0
+
+
 def cmd_symbol(args: argparse.Namespace) -> int:
     cfg = _load(args.project)
     cache = SymbolCache(build_registry(cfg.symbol))
@@ -145,6 +175,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_exp.add_argument("--basename", default="barcode_strip", help="Output file stem.")
     p_exp.add_argument("--quiet", "-q", action="store_true", help="Suppress progress output.")
     p_exp.set_defaults(func=cmd_export)
+
+    p_zpl = sub.add_parser(
+        "zpl", parents=[common],
+        help="Export native ZPL for Zebra printers (optionally send to port 9100).",
+    )
+    p_zpl.add_argument("--out", "-o", default="out", help="Output directory.")
+    p_zpl.add_argument("--basename", default="barcode_strip", help="Output file stem.")
+    p_zpl.add_argument(
+        "--send", metavar="HOST[:PORT]",
+        help="After writing, send each piece to the printer's raw port (default 9100).",
+    )
+    p_zpl.set_defaults(func=cmd_zpl)
 
     p_sym = sub.add_parser("symbol", parents=[common], help="Print one symbol as ASCII.")
     p_sym.add_argument("payload", help="Payload to encode.")

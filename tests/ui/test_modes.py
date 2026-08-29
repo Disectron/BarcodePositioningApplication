@@ -929,3 +929,13 @@ def test_the_issues_heading_does_not_claim_none_while_listing_notes(window):
     heading = window._issues.heading.text()
     assert "none blocking" in heading
     assert "note" in heading
+
+
+def test_the_zpl_action_gates_with_the_other_exports(window):
+    window._store.update_section("payload", digits=2)  # blocking
+    window._controller.recompute()
+    assert not window._act_export_zpl.isEnabled()
+
+    window._store.update_section("payload", digits=6)
+    window._controller.recompute()
+    assert window._act_export_zpl.isEnabled()

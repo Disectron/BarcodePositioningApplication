@@ -694,6 +694,19 @@ class MediaPanel(ConfigPanel):
             make_double(cfg.printer.unprintable_margin_mm, maximum=50.0, decimals=1),
             suffix="mm", section="printer",
         )
+        max_piece = make_double(cfg.printer.max_label_length_mm, minimum=0.0,
+                                maximum=20000.0, step=10.0, decimals=0)
+        max_piece.setSpecialValueText("Not stated")
+        self.add_row(
+            "max_label_length_mm", "Max piece length", max_piece, suffix="mm",
+            section="printer",
+            tooltip=(
+                "The longest single piece the printer can print - a label "
+                "printer's firmware limit (a Zebra ZD230 stops at 990 mm). "
+                "The ZPL export splits the strip at it; device presets fill "
+                "it in. 0 = not stated."
+            ),
+        )
         self.measured = make_double(
             cfg.printer.measured_calibration_mm, minimum=1.0, maximum=1000.0, step=0.1
         )
