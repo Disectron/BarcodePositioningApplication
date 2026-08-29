@@ -71,7 +71,11 @@ def _piece_config(cfg: AopsConfig) -> AopsConfig:
     sticker: the virtual paper becomes the sticker's printable length with
     no side margins, so cell boundaries can land exactly on the die-cut
     edges. The liner gap between stickers never enters the geometry - it is
-    the printer's registration mark, not part of the strip.
+    the printer's registration mark, not part of the strip. The leading
+    margin is dropped too: it exists so a continuous strip has white to
+    grip and squeegee from, but a sticker provides its own handling and
+    code zero's quiet zone lives inside the cell margin either way - so
+    the first sticker starts with its first code, not 20 mm of blank.
     """
     die_cut = cfg.printer.label_length_mm > 0
     if die_cut:
@@ -114,6 +118,8 @@ def _piece_config(cfg: AopsConfig) -> AopsConfig:
             alignment_arrows=False,
             registration_marks=False,
             splice_labels=False,
+            leading_margin_mm=0.0 if die_cut else cfg.printing.leading_margin_mm,
+            trailing_margin_mm=0.0 if die_cut else cfg.printing.trailing_margin_mm,
         ),
     )
 

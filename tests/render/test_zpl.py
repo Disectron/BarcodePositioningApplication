@@ -319,16 +319,16 @@ def test_the_cli_writes_zpl_end_to_end(tmp_path, capsys):
 
 
 def test_die_cut_stock_packs_one_sticker_per_label(tmp_path):
-    """100 mm stickers at 25 mm pitch: the first carries the 20 mm leader
-    plus 3 codes, every later one exactly 4 - cell boundaries landing on the
-    die-cut edges, all in ONE batch file with gap sensing on."""
+    """100 mm stickers at 25 mm pitch hold exactly 4 codes each - no leading
+    blank (a sticker provides its own handling), cell boundaries landing on
+    the die-cut edges, all in ONE batch file with gap sensing on."""
     cfg = dc.replace(job(), printer=dc.replace(job().printer,
                                                label_length_mm=100.0))
     result = export(cfg, tmp_path)
 
     assert result.piece_count == 1  # one batch file
     assert result.paths[0].name == "strip.zpl"
-    assert len(result.labels) == 8  # 3 + 4*7 = 31 codes
+    assert len(result.labels) == 8  # 4*7 + 3 = 31 codes
     text = result.paths[0].read_text(encoding="ascii")
     assert text.count("^XA") == 8
     assert "^MNY" in text and "^MNN" not in text
@@ -336,6 +336,23 @@ def test_die_cut_stock_packs_one_sticker_per_label(tmp_path):
     sticker_dots = round(100.0 / 25.4 * 203)
     for label in result.labels:
         assert label.length_dots <= sticker_dots + 1
+
+
+def test_die_cut_stickers_start_with_a_code_not_a_blank():
+    """The 20 mm lead-in is continuous-media handling white; on stickers it
+    was dead space at the start of the run. The first placed segment of the
+    first sticker must be a cell."""
+    from aops.core.enums import SegmentKind
+    from aops.render.zpl.export import _piece_config
+
+    cfg = dc.replace(job(), printer=dc.replace(job().printer,
+                                               label_length_mm=100.0))
+    pieces = derive(_piece_config(cfg), matrix_cols=10)
+    first = pieces.pages[0]
+    assert first.placed[0].segment.kind is SegmentKind.CELL
+    # And the continuous path keeps its lead untouched.
+    continuous = derive(_piece_config(job()), matrix_cols=10)
+    assert continuous.pages[0].placed[0].segment.kind is SegmentKind.LEAD
 
 
 def test_continuous_media_still_tracks_as_continuous(tmp_path):

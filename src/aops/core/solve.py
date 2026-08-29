@@ -102,8 +102,9 @@ PITCH_STEP_MM: float = 5.0
 #: operator's requirement, verbatim: "always have the barcode size such that
 #: it fits 2-3 barcodes. Prioritise barcode size over quantity." Three is the
 #: target because it sits at the top of that range while already producing
-#: codes larger than any constraint asks for; the first sticker carries one
-#: fewer (the lead-in takes a slot), which is what lands the run at 2-3.
+#: codes larger than any constraint asks for (the ZPL export drops the
+#: leading margin on stickers, so every sticker actually carries the full
+#: three; only stock shorter than three rounded pitches drops to two).
 STICKER_TARGET_CODES: int = 3
 
 #: Vertical clearance added above and below the symbol band for the printed
@@ -266,8 +267,7 @@ def solve(
     # match, "prioritise barcode size over quantity". The sticker length
     # divided by the target, rounded DOWN to a clean step so the codes still
     # fit, becomes a pitch floor; the growth pass below then fills the huge
-    # cell. The first sticker naturally carries one code fewer (the lead-in
-    # takes a slot), landing the run at 2-3 codes per sticker.
+    # cell.
     label_mm = base.printer.label_length_mm
     sticker_pitch = 0.0
     if label_mm > 0:
